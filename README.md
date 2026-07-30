@@ -1,4 +1,4 @@
-# Bonsai
+<h1><img src="frontend/src/assets/logo.svg" width="28" height="28" alt="Bonsai logo" align="center" /> Bonsai</h1>
 
 An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/` for the product background (`bonsai_initial_idea.md`, `bonsai_prd.md`) and `design.md` for the current build's technical design.
 
