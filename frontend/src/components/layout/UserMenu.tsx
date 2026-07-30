@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, Info, FileText, Shield, ScrollText, Pencil, Download } from 'lucide-react';
+import { ChevronDown, Info, FileText, Shield, ScrollText, Pencil, Download, Upload } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
+import { ConfirmDialog } from './ConfirmDialog';
+import { NoticeDialog } from './NoticeDialog';
 
 const INFO_LINKS = [
   { to: '/about', label: 'About Bonsai', icon: Info },
@@ -13,13 +15,18 @@ const INFO_LINKS = [
   { to: '/policy', label: 'User Policy', icon: ScrollText },
 ];
 
+type DialogStep = 'idle' | 'confirm' | 'notice';
+
 export function UserMenu() {
   const { user, updateUserSettings } = useAppData();
   const [open, setOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(user.name);
-  const [showExportNote, setShowExportNote] = useState(false);
+  const [exportStep, setExportStep] = useState<DialogStep>('idle');
+  const [importStep, setImportStep] = useState<DialogStep>('idle');
+  const [importedFileName, setImportedFileName] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const initials = user.name
     .split(' ')
@@ -34,7 +41,6 @@ export function UserMenu() {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
         setEditingName(false);
-        setShowExportNote(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -44,7 +50,6 @@ export function UserMenu() {
   const closeMenu = () => {
     setOpen(false);
     setEditingName(false);
-    setShowExportNote(false);
   };
 
   const saveName = () => {
@@ -56,6 +61,21 @@ export function UserMenu() {
 
   return (
     <div ref={containerRef} className="relative">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".zip"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            setImportedFileName(file.name);
+            setImportStep('notice');
+          }
+          e.target.value = '';
+        }}
+      />
+
       {open && (
         <div className="absolute bottom-full left-0 mb-2 w-64 rounded-lg border border-bonsai-border bg-white p-2 shadow-lg">
           {editingName ? (
@@ -81,17 +101,25 @@ export function UserMenu() {
               </button>
               <div className="my-1 border-t border-bonsai-border" />
               <button
-                onClick={() => setShowExportNote(true)}
+                onClick={() => {
+                  setExportStep('confirm');
+                  setOpen(false);
+                }}
                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-bonsai-text hover:bg-bonsai-cream"
               >
                 <Download className="h-4 w-4 text-bonsai-text-muted" />
                 Export My Data
               </button>
-              {showExportNote && (
-                <p className="px-3 pb-1 text-xs text-bonsai-text-muted">
-                  Not wired up yet. Phase 1 will let you download your data as an archive.
-                </p>
-              )}
+              <button
+                onClick={() => {
+                  setImportStep('confirm');
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-bonsai-text hover:bg-bonsai-cream"
+              >
+                <Upload className="h-4 w-4 text-bonsai-text-muted" />
+                Import User Data
+              </button>
               {INFO_LINKS.map(({ to, label, icon: Icon }) => (
                 <Link
                   key={to}
@@ -121,6 +149,46 @@ export function UserMenu() {
         <span className="flex-1 text-sm font-medium text-bonsai-text">{user.name}</span>
         <ChevronDown className={cn('h-4 w-4 text-bonsai-text-muted transition-transform', open && 'rotate-180')} />
       </button>
+
+      {exportStep === 'confirm' && (
+        <ConfirmDialog
+          title="Export Your Data"
+          description="This will package your course outlines, module content, progress, and settings into a downloadable archive. API keys and other credentials are never included."
+          confirmLabel="Export"
+          onCancel={() => setExportStep('idle')}
+          onConfirm={() => setExportStep('notice')}
+        />
+      )}
+      {exportStep === 'notice' && (
+        <NoticeDialog
+          title="Export Your Data"
+          message="Not wired up yet. Phase 1 will let you download your data as an archive."
+          onClose={() => setExportStep('idle')}
+        />
+      )}
+
+      {importStep === 'confirm' && (
+        <ConfirmDialog
+          title="Import Your Data"
+          description="Select a Bonsai export archive (.zip) to restore your courses, progress, and settings on this installation. API keys aren't included in exports, so you'll need to re-enter those afterward."
+          confirmLabel="Choose File"
+          onCancel={() => setImportStep('idle')}
+          onConfirm={() => {
+            setImportStep('idle');
+            importInputRef.current?.click();
+          }}
+        />
+      )}
+      {importStep === 'notice' && (
+        <NoticeDialog
+          title="Import Your Data"
+          message={`Not wired up yet. Phase 1 will let you restore your data from "${importedFileName}".`}
+          onClose={() => {
+            setImportStep('idle');
+            setImportedFileName(null);
+          }}
+        />
+      )}
     </div>
   );
 }

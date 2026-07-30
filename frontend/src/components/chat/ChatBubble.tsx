@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Sprout } from 'lucide-react';
+import logo from '../../assets/logo.svg';
 
 interface ChatBubbleProps {
   from: 'bonsai' | 'user';
@@ -20,7 +20,7 @@ export function ChatBubble({ from, children }: ChatBubbleProps) {
   return (
     <div className="flex items-start gap-3">
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bonsai-cream">
-        <Sprout className="h-4 w-4 text-bonsai-green" />
+        <img src={logo} alt="Bonsai" className="h-4 w-4" />
       </span>
       <div className="max-w-md rounded-2xl rounded-tl-sm bg-bonsai-cream px-4 py-3 text-sm text-bonsai-text">
         {children}

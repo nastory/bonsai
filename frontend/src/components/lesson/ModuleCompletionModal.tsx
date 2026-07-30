@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Sprout } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import logo from '../../assets/logo.svg';
 
 interface ModuleCompletionModalProps {
   moduleTitle: string;
@@ -23,7 +23,7 @@ export function ModuleCompletionModal({
       <Card className="w-full max-w-md">
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bonsai-cream">
-            <Sprout className="h-4 w-4 text-bonsai-green" />
+            <img src={logo} alt="Bonsai" className="h-4 w-4" />
           </span>
           <div>
             <p className="font-semibold text-bonsai-text">Nice work finishing {moduleTitle}!</p>

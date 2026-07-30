@@ -1,6 +1,8 @@
 # Bonsai
 
-An open-source, locally-hosted, self-guided AI learning platform. See `docs/` for the product background (`bonsai_initial_idea.md`, `bonsai_prd.md`) and `design.md` for the current build's technical design.
+An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/` for the product background (`bonsai_initial_idea.md`, `bonsai_prd.md`) and `design.md` for the current build's technical design.
+
+**Status:** Phase 0 — a React front-end shell running against static fixture data, plus a minimal Flask backend skeleton. No real course generation, retrieval, or persistence yet; that's Phase 1.
 
 ## Motivation
 I love continuous learning, but I get tired of having to search through sites like Udemy or Coursera looking for courses, not finding exactly what I need, and then paying for a course that only loosely lines up with what I actually want to learn.
@@ -10,10 +12,6 @@ While laying in bed after searching for a good course on practical GPU programmi
 The outline drafted was very good -- it had a great structured approach with modules, timelines, practicum, and even a capstone project; but again, only the outline. The question then became how would I have Claude actually go about creating this course for me in an engaging, practical, and motivating way. If I could figure that out, I could have it teach me anything.
 
 Recently, I've been on a bonsai kick on TikTok. The meditative patience that goes into creating and maintaining these seemingly ancient trees in miniature is fascinating to me: wiring shoots and cutting limbs, cleaning roots, repotting -- all with patient goal of creating something beautiful. That's the experience I want from this learning platform: a self-guided, self-built program of learning where the student has the ability to reshape the curriculum as they go through AI. The fact that Bonsai has "AI" in its name is just a fun coincidence.
-
-Nigel
-
-**Status:** Phase 0 — a React front-end shell running against static fixture data, plus a minimal Flask backend skeleton. No real course generation, retrieval, or persistence yet; that's Phase 1.
 
 ## Prerequisites
 

@@ -1,7 +1,8 @@
 import { NavLink } from 'react-router-dom';
-import { Home, BookOpen, PlusCircle, Library, Settings, Sprout } from 'lucide-react';
+import { Home, BookOpen, PlusCircle, Library, Settings } from 'lucide-react';
 import { cn } from '../ui/cn';
 import { UserMenu } from './UserMenu';
+import logo from '../../assets/logo.svg';
 
 const navItems: { to: string; label: string; icon: typeof Home; end: boolean }[] = [
   { to: '/', label: 'Today', icon: Home, end: true },
@@ -16,7 +17,7 @@ export function Sidebar() {
     <aside className="flex h-screen w-64 shrink-0 flex-col justify-between border-r border-bonsai-border bg-white px-4 py-6">
       <div>
         <div className="mb-8 flex items-center gap-2 px-2">
-          <Sprout className="h-5 w-5 text-bonsai-green" />
+          <img src={logo} alt="Bonsai" className="h-5 w-5" />
           <span className="text-lg font-semibold text-bonsai-text">Bonsai</span>
         </div>
 

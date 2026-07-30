@@ -142,7 +142,7 @@ Routes (`frontend/src/App.tsx`):
 - `/settings` (`Settings`) — model provider config (hosted vs. BYOM), thumbnail-generation toggle, feedback-tone preference.
 - `/about` (`About`), `/terms` (`Terms`), `/privacy` (`Privacy`), `/policy` (`UserPolicy`) — added post-review: static info pages reached from a dropdown menu on the sidebar's user-profile button (see below), rather than the static non-interactive button originally built.
 
-A module-completion check-in (feedback prompt, with a "change direction" option) renders as a modal over the `Lesson` route when the last activity in a module is completed, rather than being its own route. The sidebar's user-profile button opens a `UserMenu` dropdown (About Bonsai, Terms of Service, Privacy Policy, User Policy, and an inline "Update username" action using the existing `updateUserSettings` mutator) rather than being a dead click target. Added post-review: an "Export My Data" action sits alongside the info links in that same dropdown — it's a placeholder for the PRD's Data Export & Import requirement, showing an inline "not wired up yet" note rather than doing anything real, since there's no persisted data to export in Phase 0.
+A module-completion check-in (feedback prompt, with a "change direction" option) renders as a modal over the `Lesson` route when the last activity in a module is completed, rather than being its own route. The sidebar's user-profile button opens a `UserMenu` dropdown (About Bonsai, Terms of Service, Privacy Policy, User Policy, and an inline "Update username" action using the existing `updateUserSettings` mutator) rather than being a dead click target. Added post-review: an "Export My Data" action and an "Import User Data" action sit alongside the info links in that same dropdown, placeholders for the PRD's Data Export & Import requirement. Both now go through a shared two-step dialog pair (`ConfirmDialog` then `NoticeDialog`, in `components/layout/`) rather than an inline note: clicking either closes the dropdown and opens a `ConfirmDialog` explaining what the action will do, with Cancel/Confirm. Export's Confirm immediately shows a `NoticeDialog` acknowledging it isn't wired up yet. Import's Confirm (labeled "Choose File") triggers a real file picker (`accept=".zip"`); once a file is actually chosen, a `NoticeDialog` names it and gives the same "not wired up yet" acknowledgment. Neither does anything with the file — Phase 1 will.
 
 Backend (`backend/app/routes/health.py`):
 - `GET /api/health` → `200 {"status": "ok"}`. Only endpoint that exists in Phase 0.
@@ -177,7 +177,9 @@ bonsai/
 │       │   │   ├── AppShell.tsx
 │       │   │   ├── Sidebar.tsx
 │       │   │   ├── UserMenu.tsx        # dropdown from the profile button: info pages + inline username edit
-│       │   │   └── InfoPage.tsx        # shared layout for About/Terms/Privacy/UserPolicy
+│       │   │   ├── InfoPage.tsx        # shared layout for About/Terms/Privacy/UserPolicy
+│       │   │   ├── ConfirmDialog.tsx   # added post-review: generic explain + Cancel/Confirm popup
+│       │   │   └── NoticeDialog.tsx    # added post-review: generic acknowledgment popup with a Close button
 │       │   ├── ui/                # themed primitives: Button, Card, Input, Toggle, ProgressBar, Badge
 │       │   ├── course/
 │       │   │   └── CourseCard.tsx
