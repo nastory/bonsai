@@ -1,0 +1,92 @@
+# Bonsai — PRD
+
+**Author:** Nigel Story
+**Status:** Draft
+**Last updated:** 2026-07-30
+
+## Overview
+Bonsai is an open-source, standalone, locally-hosted application for self-directed learning on any subject. Instead of picking from a catalog of pre-built courses like Coursera or Udemy, a learner tells Bonsai what they want to learn. An LLM-driven interview establishes their background and goals, then generates a structured course outline the learner can revise before starting. Modules are generated one at a time as the learner progresses, sourcing and citing real material from the web, with exercises and guided feedback along the way instead of grades. Learners can reshape their curriculum mid-course, branch into related topics once a course is complete, and pick their own model provider, whether that's a hosted API like Anthropic or OpenAI, or a model they run locally themselves. The project takes its name from the meditative, self-shaped practice of bonsai cultivation: the learner builds and reshapes their own curriculum as they go, rather than following a fixed one someone else designed.
+
+## Problem & Goals
+Existing course platforms require searching through a fixed catalog for something that loosely matches what a learner actually wants, then often settling for a course that's broader, narrower, or differently focused than what's needed, and paying for it anyway. Asked directly for a learning plan on practical GPU programming for ML/AI engineers, an LLM produced a better result than any course-catalog search turned up: a well-structured outline with modules, timelines, a practicum, and a capstone. But an outline isn't a course. Nothing generates the actual lesson content, sources supporting material, tracks progress, or adapts as the learner's understanding evolves.
+
+Bonsai's goal is to take that outline-drafting ability and turn it into a full course: real lesson content, generated and adjusted as the learner works through it, running locally on their own machine.
+
+## Target Users
+Bonsai is built for a single local user per installation. There's no login, multi-profile support, or account system in v1. The target learner is anyone motivated to self-direct their own education on a topic that interests them, without needing that topic to exist as a pre-built course already. This spans a wide range of technical sophistication: an ML engineer studying GPU programming is as much a target user as someone learning woodworking or a new language. The one constraint is access to whatever tools or materials a hands-on subject requires — a compiler and GPU for coding, wood and tools for woodworking. Bonsai teaches and guides; it doesn't supply the equipment or execution environment for the subject itself.
+
+## Functional Requirements
+
+### Course Creation & Interview Flow
+A learner starts a new course by describing, in their own words, what they want to learn. Instead of (or alongside) a text description, the learner can attach one or more documents — a research paper, an article, any file they want Bonsai to build a course around. Bonsai then runs a short, LLM-driven interview: questions generated dynamically based on the topic (or the attached material) and the learner's prior answers, presented one question per screen with a free-text response box. The interview covers the learner's existing experience, motivation, desired depth, and any specific areas of focus, and is capped at roughly ten questions — the same interview happens whether the course originates from a typed topic or an uploaded document, since the questions are about how the learner wants to be taught, not just what the source material contains. At the end, Bonsai generates a structured course outline and presents it for review. The learner can ask for revisions in plain language or approve it and start learning.
+
+### Source Materials
+When a course is created from one or more uploaded documents, Bonsai keeps a permanent link back to them — a "Source Materials" section accessible from within the course, listing each uploaded file. This is separate from the inline citations described under Retrieval & Citation below: citations point to web material Bonsai found and synthesized, while Source Materials are the learner's own original documents, kept as-is and re-viewable at any time. A course can have zero (built from a topic and web retrieval alone), one, or several source documents attached.
+
+### Course Outline & Module Generation
+The course outline includes a title, description, prerequisites, an estimated timeline, and an ordered list of modules. Each module has a title, description, estimated timeline, planned learning activities, and learning outcomes. Rather than generating all module content up front, Bonsai generates each module's full content only when the learner reaches it, using the outline plus everything established so far (the learner's stated goals, prior module content, any redirection feedback) to keep generation consistent. The exact schema for outlines and modules, the JSON shape, versioning, is an implementation detail for engineering to finalize, but it needs to be stable enough to serve as the contract between generation and the front-end.
+
+### Retrieval & Citation
+Learning material is sourced from the public web rather than invented from the model's training data alone. When a course was created from uploaded source documents, module generation is grounded in that material first — the retrieval agent supplements it with web search rather than replacing it. Module generation uses a retrieval agent: the generating model gets a model-agnostic web search tool and a page-fetch tool, and runs an iterative loop of searching, fetching candidate sources, weighing their relevance and trustworthiness, then deciding what to include, cite, or discard. That's meaningfully different from a single unevaluated search pass. Citations show up as inline links in the generated material. Tool-use reliability varies a lot across models, so this retrieval loop is fully supported for hosted models (Anthropic, OpenAI) and best-effort for user-supplied local models (see Model Provider Configuration below). Bonsai should clearly flag when citation quality is running in best-effort mode.
+
+### Learning Materials & Content Types
+Modules combine guided readings synthesized from sourced articles, embedded videos (e.g., YouTube), and generated images, mainly course and module thumbnails for now, with room to add illustrative in-course images later. All synthesized text carries inline citations back to source material, per the retrieval requirement above.
+
+### Exercises & Assessments
+Learning activities are about feedback, not grades. There's no pass/fail or scoring anywhere in the product. Formats include guided project walkthroughs (a step-by-step coding or hands-on project the learner works through with their own tools), guided discussion with Bonsai over chat, checkbox quizzes, and short written essays. For project-based and essay-based work, the learner submits what they did and gets qualitative feedback from the LLM. The tone of that feedback, encouraging or straightforward, is a setting the learner controls.
+
+### Progress, Change-of-Direction & Forking
+When a learner finishes a module, Bonsai checks in and offers the choice to continue as planned or change direction. Changing direction discards the remaining, not-yet-reached modules and generates a new set based on the learner's new input, while completed modules and progress stay intact. There's no non-linear branching or versioned outline graph here; redirecting always replaces what's ahead rather than merging paths or building a tree of alternatives.
+
+### Learning Objectives
+Learners can optionally set a personal goal for how many learning activities they want to complete each week (for example, "5 learning activities this week"). Bonsai tracks completed activities against that goal and shows progress toward it, most naturally on the Today dashboard where the learner already checks in. Missing a week's goal carries no penalty or judgment, consistent with Bonsai's no-grading philosophy. The goal is a standing preference the learner can change or clear at any time, not something set per course.
+
+### Completed Courses, Indexing & Search
+Completed courses get tallied, and every course, module, and topic is indexed so the learner can find it again later. From a completed course, a learner can start a new one that goes deeper into the same topic ("keep going" / "dive deeper") or branches into a related topic. Either path creates a new course rather than editing the finished one.
+
+### Model Provider Configuration
+Bonsai routes all model calls through LiteLLM, so the learner can configure whichever provider or model they want rather than being locked into one. The product treats this as two tiers, configured through a settings pane:
+- **Hosted models** (Anthropic, OpenAI), where the learner supplies their own API key. This is the fully capable path: reliable tool-use support means the retrieval/citation flow works as designed.
+- **Bring Your Own Model (BYOM)** for locally hosted or open-weight models. This path is explicitly best-effort. Local models vary a lot in tool-use support, so retrieval and citation quality may suffer, and Bonsai should say so rather than imply it matches the hosted path.
+
+Bonsai also needs model roles beyond text completion: embedding models for retrieval ranking and, later, semantic search over the course index, and image generation models for thumbnails (with room to grow into in-course imagery). Each is independently configurable.
+
+### Data Export & Import
+Learners can export all of their data, course outlines, module content, progress, index, as a single archive, and import it into a different installation to restore their full history. Exports leave out API keys and any other credentials; those get re-entered after an import.
+
+### Content Moderation & Restrictions
+Bonsai must never teach, reference, recommend, or encourage anything illegal: drug manufacturing, weapons, self-harm, hate content, none of it. Medical and legal topics need disclaimers making clear Bonsai doesn't license or qualify the learner to practice or advise in those fields. Esoteric topics like conspiracy theories or alternative medicine need to be clearly flagged when they contradict scientific consensus or the official record. Bonsai stays neutral on religion and politics, carries no accreditation of any kind, and makes no guarantee that its generated or synthesized material is correct.
+
+Bonsai is locally hosted with no human moderation layer, so enforcement relies on two things: the safety behavior built into hosted model providers as the default backstop, and a lightweight automated check on the topic itself at course-creation time, independent of whichever model ends up generating content. For BYOM/local models, Bonsai can't guarantee a model will follow these restrictions. That's documented as a policy: responsibility shifts to the learner once they've configured their own model, rather than something Bonsai can technically enforce.
+
+## Technical Constraints & Dependencies
+- **Frontend:** React SPA.
+- **Backend:** Python/Flask, exposing a REST API to the frontend.
+- **Deployment:** Runs as a local server the learner starts (a Python entry point or a lightweight launcher), not Docker-first packaging. That keeps the door open to later wrapping the same backend as a subprocess inside an Electron or Tauri desktop build, without having to re-architect anything. Docker might still show up for auxiliary pieces, like bundling a local model runtime, but it's not required for the core app.
+- **Storage:** Hybrid. SQLite for course/module metadata, progress, and the searchable index; the file system for generated module content and uploaded source documents, stored per course and module.
+- **Document ingestion:** Text extraction for uploaded source documents (PDF, plain text, and similar formats, to be scoped further in engineering) so their content can be fed into course and module generation.
+- **Model layer:** LiteLLM as the provider-agnostic routing layer, supporting hosted providers (Anthropic, OpenAI) and BYOM local models, with completion, embedding, and image-generation models each configurable on their own.
+- **Retrieval:** A dedicated, model-agnostic web search API (Brave Search, Tavily, SerpAPI, or similar, to be chosen in engineering), plus a page-fetch tool, both exposed to the completion model as part of the retrieval agent's tool-use loop.
+- **License:** Apache 2.0.
+
+## Scope
+### In Scope (v1, across phases)
+The full product described above, course creation, retrieval-grounded module generation, exercises and feedback, change-of-direction forking, completed-course indexing and branching, multi-provider model configuration, data export/import, and content restrictions, is in scope for v1. It's delivered across the phases below rather than cut down to a narrower slice.
+
+### Out of Scope
+Multi-profile/login support, a hosted or cloud version of Bonsai, and in-app code execution or sandboxing for practical exercises (learners use their own tools and environment for hands-on work) are all explicitly out of scope for now.
+
+## Risks & Open Questions
+- **Citation quality is uneven by design.** The retrieval agent depends on the active model's tool-use support, so content trustworthiness will vary between the hosted path and BYOM local models. That's a deliberate, disclosed tradeoff, not an oversight, but it means "vetted and cited" is only a real guarantee on the hosted path.
+- **Legal exposure around sourced content** (synthesizing articles, embedding video) looks low-risk since material is consumed locally by the person who asked for it rather than redistributed to other users, similar to personal research through a search engine, but this hasn't had a formal legal review. Uploaded source documents extend this same reasoning to material the learner already possesses (a paper, an article) — stored and processed locally for their own use, not redistributed — but it hasn't had a formal legal review either, and storing a full copyrighted document is a step further than synthesizing citations from it.
+- **Content moderation for BYOM models is a policy, not an enforced control.** A learner who sets up an uncensored local model can bypass Bonsai's restrictions. There's no technical way to stop that in a locally-hosted, single-user tool, so it's documented as the user's responsibility rather than solved with app-level filtering.
+- **Cost is untested.** Actual token/API cost per course or module (interview, outline, retrieval, module generation) hasn't been measured yet, and needs real-world testing before cost visibility can mean anything to learners.
+- **Export/import portability across app versions** isn't solved. If Bonsai's data schema changes between releases, an export from an older version might not import cleanly into a newer one, so this needs a migration strategy before it becomes a real usage pattern.
+- **Search/retrieval provider choice** (Brave, Tavily, SerpAPI, etc.) is still open and should get settled early in Phase 1, since it's a hard dependency for the retrieval agent.
+- **Course outline/module JSON schema** still needs to be finalized in engineering, along with the state/context strategy for keeping multi-session module generation consistent without re-sending the full course history every time.
+
+## Milestones
+- **Phase 0 — UI Mockup:** React front-end shell built against dummy/static data: course dashboard and browsing, course-creation interview screens (including document attachment), outline review screen (including a Source Materials preview), module/lesson view (including a Source Materials link), exercise/quiz UI, and settings pane layout. No real backend logic yet; this validates the UX and navigation before generation and retrieval work begins.
+- **Phase 1 — Core Loop:** Real Flask backend and SQLite+file storage; live LLM-driven interview through outline through revision loop, including real document upload and text extraction to ground generation in the learner's own material; incremental module generation; the retrieval agent for citations; exercises and assessments wired to real generation and feedback; change-direction/fork behavior; completed-course tally and index; data export/import. LiteLLM model layer live, with hosted providers as the primary supported path and BYOM local models supported best-effort.
+- **Phase 2 — Rich Media & Continuity:** Video embedding; image generation (thumbnails, then optional in-course imagery); "keep going / dive deeper / branch off" from completed courses; refinement of the BYOM local-model experience; Learning Objectives (optional weekly activity-count goal with progress tracking on the Today dashboard), building on Phase 1's activity-completion tracking.
+- **Phase 3 — Polish:** Settings pane refinements; semantic search over the course index using the embedding model; broader community and contribution readiness.

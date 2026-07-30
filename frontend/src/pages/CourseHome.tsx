@@ -1,0 +1,155 @@
+import { useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { ChevronDown, ChevronRight, Check, Circle, Lock } from 'lucide-react';
+import { useAppData } from '../context/AppDataContext';
+import { findCurrentActivity, activityPath } from '../lib/courseHelpers';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { ProgressBar } from '../components/ui/ProgressBar';
+import { cn } from '../components/ui/cn';
+
+export function CourseHome() {
+  const { courseId } = useParams();
+  const { getCourse } = useAppData();
+  const course = courseId ? getCourse(courseId) : undefined;
+
+  const [expandedModules, setExpandedModules] = useState<Set<string>>(() => {
+    if (!course) return new Set<string>();
+    const current = findCurrentActivity(course);
+    return new Set<string>(current ? [current.module.id] : []);
+  });
+
+  if (!course) {
+    return (
+      <div className="mx-auto max-w-3xl px-8 py-10">
+        <p className="text-sm text-bonsai-text-muted">
+          Course not found.{' '}
+          <Link to="/courses" className="font-medium text-bonsai-green">
+            Back to My Courses
+          </Link>
+          .
+        </p>
+      </div>
+    );
+  }
+
+  const current = findCurrentActivity(course);
+
+  const toggleModule = (moduleId: string) => {
+    setExpandedModules((prev) => {
+      const next = new Set(prev);
+      if (next.has(moduleId)) {
+        next.delete(moduleId);
+      } else {
+        next.add(moduleId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl px-8 py-10">
+      <div className="flex items-center gap-4">
+        <div className={`h-16 w-16 shrink-0 rounded-lg bg-gradient-to-br ${course.thumbnailUrl}`} />
+        <div>
+          <h1 className="text-2xl font-semibold text-bonsai-text">{course.title}</h1>
+          <p className="mt-1 text-sm text-bonsai-text-muted">{course.description}</p>
+        </div>
+      </div>
+
+      <Card className="mt-6">
+        <div className="flex items-center gap-3">
+          <ProgressBar percent={course.progressPercent} className="flex-1" />
+          <span className="text-sm font-medium text-bonsai-text">{course.progressPercent}%</span>
+        </div>
+
+        {current ? (
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-bonsai-text-muted">Currently on</p>
+              <p className="text-sm font-medium text-bonsai-text">
+                {current.module.title} · {current.activity.title}
+              </p>
+            </div>
+            <Link to={activityPath(course.id, current.module.id, current.activity.id)}>
+              <Button>Continue</Button>
+            </Link>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-bonsai-text-muted">No lesson in progress right now.</p>
+        )}
+      </Card>
+
+      <div className="mt-6 space-y-2">
+        {course.modules.map((module) => {
+          const hasContent = module.activities.length > 0;
+          const isExpanded = expandedModules.has(module.id);
+
+          return (
+            <div key={module.id} className="rounded-xl border border-bonsai-border bg-white">
+              <button
+                onClick={() => hasContent && toggleModule(module.id)}
+                disabled={!hasContent}
+                className="flex w-full items-center justify-between px-4 py-3 text-left disabled:cursor-default"
+              >
+                <div>
+                  <p
+                    className={cn(
+                      'text-sm font-medium',
+                      module.status === 'locked' ? 'text-bonsai-text-muted' : 'text-bonsai-text',
+                    )}
+                  >
+                    {module.title}
+                  </p>
+                  {!hasContent && (
+                    <p className="mt-0.5 text-xs text-bonsai-text-muted">
+                      {module.status === 'locked'
+                        ? 'Not generated yet. Unlocks when you reach it.'
+                        : 'Generating...'}
+                    </p>
+                  )}
+                </div>
+                {hasContent &&
+                  (isExpanded ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-bonsai-text-muted" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-bonsai-text-muted" />
+                  ))}
+              </button>
+
+              {hasContent && isExpanded && (
+                <ul className="space-y-1 border-t border-bonsai-border px-4 py-3">
+                  {module.activities.map((activity) => {
+                    const isLocked = activity.status === 'locked';
+                    const row = (
+                      <div
+                        className={cn(
+                          'flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm',
+                          !isLocked && 'text-bonsai-text hover:bg-bonsai-cream',
+                          isLocked && 'text-bonsai-text-muted',
+                        )}
+                      >
+                        {activity.status === 'completed' && (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-bonsai-green" />
+                        )}
+                        {activity.status === 'available' && <Circle className="h-3.5 w-3.5 shrink-0" />}
+                        {activity.status === 'locked' && <Lock className="h-3.5 w-3.5 shrink-0" />}
+                        <span>{activity.title}</span>
+                      </div>
+                    );
+
+                    return (
+                      <li key={activity.id}>
+                        {isLocked ? row : <Link to={activityPath(course.id, module.id, activity.id)}>{row}</Link>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

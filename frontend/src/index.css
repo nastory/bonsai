@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-bonsai-cream text-bonsai-text font-sans antialiased;
+}
