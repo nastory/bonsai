@@ -259,5 +259,119 @@ In test mode the database is `sqlite:///:memory:` (fresh per test via the `db` f
 
 **Note for anyone regenerating a migration:** `app/models.py` must actually be imported somewhere `create_app()` runs (it's imported inside the factory, after `db.init_app()`), or Alembic's autogenerate sees an empty `db.metadata` and reports "No changes in schema detected" even though the models exist. Hit this once already; the fix is the `from app import models` line inside `create_app()`, not a `flask db` flag.
 
-### Deferred to the next slice
+### Deferred to the next slice (at the time this section was written)
 `SourceMaterial` and `UserSettings` don't have persistence models yet (Phase 0's fixtures cover them on the frontend for now). Where API keys should live, in the same database that gets exported, or a separate untracked local file, so export doesn't need to remember to scrub them, is an open question worth deciding before `UserSettings` persistence is built. No REST API routes exist yet beyond `/api/health`; the frontend still runs entirely off static fixtures. Document ingestion (real text extraction) and the retrieval agent are unbuilt.
+
+## Phase 1: SourceMaterial, UserSettings, and the first REST routes
+
+Second build slice, same TDD discipline as the first: every model and route below was written test-first (failing test confirmed, then implementation).
+
+### SourceMaterial and UserSettings models
+`SourceMaterial` (`app/models.py`) follows the same pattern as `Activity`: a `course_id` foreign key with cascading delete, `file_name`, and `file_path` pointing at the stored file on disk (no upload/serving endpoint yet, just the model).
+
+`UserSettings` resolves the API-key storage question flagged in the previous section: it stays in the same SQLite database as everything else, not a separate file. There's genuinely one settings row for the whole app (no multi-user concept), enforced by a `get_or_create()` classmethod that always operates on `id=1` rather than a normal query, so callers never need to think about "which settings row." The tradeoff this accepts: whenever data export/import gets built, it needs to explicitly skip the `model_provider_api_key` and `model_provider_byom_endpoint` columns rather than dumping the whole database file. Noted here so that work doesn't forget it.
+
+### Serialization: to_dict()
+Every model got a `to_dict()` method producing the same camelCase shape already established in `frontend/src/types/course.ts` (`estimatedTimeline`, `progressPercent`, `learningOutcomes`, `type` rather than `activityType`, etc.), even though the Python attributes themselves stay snake_case. This means the frontend can eventually consume these responses directly against its existing types with no field-renaming layer in between. `Activity.to_dict()` deliberately omits the content-heavy fields (`body`, `citations`, `question`, `options`, `prompt`, `checkPrompt`) since nothing populates `content_path` yet; those will get read from disk and added once generation exists.
+
+`UserSettings.to_dict()` never includes the raw `apiKey`. It returns `modelProvider.hasApiKey: bool` instead, so a future Settings UI can show "a key is configured" without the backend echoing a stored secret back on every read. This does mean the frontend's current `UserSettings` type (which has `modelProvider.apiKey?: string`) will need a small adjustment when it's actually wired to this API, deferred until that wiring happens.
+
+### REST routes
+`GET /api/courses` (list) and `GET /api/courses/<id>` (full detail, 404 if missing) in `app/routes/courses.py`; `GET /api/settings` (creates defaults on first call) and `PUT /api/settings` (partial update, both at the top level and within the nested `modelProvider` object, so updating one field never clobbers another) in `app/routes/settings.py`. Both blueprints are registered in `create_app()` alongside the existing health check. No course-creation route exists yet; these are read/update only.
+
+### Still deferred (at the time this section was written)
+The frontend is not wired to any of this yet; `AppDataContext` still runs entirely off the Phase 0 fixtures. Document ingestion, the retrieval agent, and actual LLM-driven course/module generation are unbuilt. File upload/serving for `SourceMaterial` (an actual endpoint to receive and store the file `file_path` points at) doesn't exist yet either, only the model.
+
+## Phase 1: Wiring the frontend to courses and settings
+
+Third build slice: `AppDataContext` now fetches real data from the backend instead of the Phase 0 fixtures, which are deleted (`frontend/src/data/mockCourses.ts`, `mockUser.ts`). Activity completion, course creation, and generation are still frontend-only or unbuilt, covered below.
+
+### API client
+`frontend/src/lib/api.ts` is a small wrapper around `fetch` (`fetchCourses`, `fetchSettings`, `updateSettings`) pointed at a hardcoded `http://localhost:5000/api`. No env-var plumbing for this yet, since there's only one deployment target (localhost dev) right now; revisit if that stops being true.
+
+### AppDataContext
+On mount, it fetches courses and settings in parallel and populates state; a `DEFAULT_USER` constant (matching the backend's own defaults) means `user` is never null while waiting, so pages don't need loading guards. A `loading` flag is exposed but not yet consumed anywhere. If the fetch fails (backend not running), it logs to the console and leaves the default/empty state rather than crashing, which is proportionate for a dev-stage app, not a production error-handling story.
+
+`completeActivity` was a local-only state mutation through this point, same logic as Phase 0, since there was no backend endpoint for it yet; see the next section for where that changed. `updateUserSettings` calls `PUT /api/settings` and replaces local state with the response, rather than merging the patch into local state directly, so the frontend's view of settings always reflects what the backend actually stored.
+
+### The API-key display problem, resolved
+Since the backend's `UserSettings.to_dict()` deliberately never returns the raw API key (see the previous section), the frontend's `UserSettings` type changed to match: `modelProvider.apiKey?: string` became `modelProvider.hasApiKey: boolean`. A separate `UserSettingsPatch` type (in `frontend/src/types/course.ts`) is what `updateUserSettings` actually accepts, since PUT is where a new `apiKey` gets written even though GET never reads one back. `Settings.tsx` reflects this: the API key input is a write-only local draft (`apiKeyDraft`, always starts empty) that saves on blur and shows "A key is configured" / "No key set yet" based on `hasApiKey`, rather than trying to bind to a value that no longer exists. The `byomEndpoint` field also moved to save-on-blur (matching the same pattern) rather than firing a network request per keystroke, which the old fixture-only version didn't need to worry about.
+
+### Seed data
+`backend/seed.py` inserts the same three example courses the old frontend fixtures had (GPU Programming, Deep Learning Foundations, Data Structures & Algorithms), run once via `python seed.py`. Worth noting: GPU Programming's `progress_percent` comes out to 60.0, computed, matching the old fixture's hardcoded value exactly, but Deep Learning Foundations and Data Structures & Algorithms now show 0% instead of the old fixture's hardcoded 30%/10%. Those two courses never had real per-activity data behind them (Phase 0 deliberately kept them "list-level only"), so 0% is the honest computed answer rather than a fabricated one. Fixing that means giving them real activities, not faking the percentage.
+
+### Still deferred (at the time this section was written)
+No endpoint exists yet to persist activity completion, so progress resets on refresh for anything done after the seed. File upload/serving for `SourceMaterial`, document ingestion, the retrieval agent, and real course-creation/generation are all still unbuilt; `CreateCourse` and `OutlineReview` still run their Phase 0 scripted/canned flow untouched.
+
+## Phase 1: Persisting activity completion
+
+Fourth build slice: progress now survives a refresh. Test-first as usual.
+
+### `POST /api/activities/<id>/complete`
+`app/routes/activities.py` moves the unlock cascade server-side, the exact same logic that used to live only in `AppDataContext`: mark the activity completed, unlock the next locked activity in its module by position, and if that was the module's last remaining activity, mark the module completed and unlock the next locked module in the course. It takes only the activity id (not course/module ids) since `Activity.id` is already a unique primary key and the rest is reachable through its relationships (`activity.module`, `module.course`). Returns the full serialized parent course so the frontend can just replace its local copy wholesale rather than reconciling a partial update.
+
+### Frontend
+`AppDataContext.completeActivity` now takes just `(activityId: string)` (was `(courseId, moduleId, activityId)`, the ids beyond `activityId` were never actually needed once the backend does the work) and calls the new endpoint, replacing the course in local state with the authoritative response instead of computing the unlock logic client-side. `Lesson.tsx`'s `handleContinue` still navigates immediately based on the client's own knowledge of module structure (is there a next activity at this position, yes/no), without waiting on the completion request to resolve; that's a deliberate, minor race (the status update lands a moment after navigation) rather than an oversight, acceptable given how fast a local SQLite write actually is.
+
+### Verified
+Manually confirmed end-to-end with curl against the seeded GPU Programming course, not just the test suite: completing `m2-a3` moved `progressPercent` from 60.0 to 70.0, unlocked `m2-a4`, and a fresh `GET /api/courses/gpu-programming` afterward still showed the change, confirming it's really in SQLite and not just held in the response.
+
+## Phase 1: Real course creation (interview -> outline -> approve)
+
+Fifth build slice, and the largest so far: `CreateCourse` and `OutlineReview` no longer run Phase 0's scripted/canned flow. This section also covers two decisions the user set before building: prompts live as separate markdown files, and every course carries a growing conversation history, not just a creation transcript.
+
+### Prompts: markdown files, not Python constants
+`backend/app/prompts/` holds plain `.md` files (`course_interview.md`, `course_outline.md` so far), loaded by `app/services/prompts.py`'s `load_prompt(name, **variables)` using stdlib `string.Template` (`${variable}` placeholders, no templating dependency needed). The point: a prompt-wording change now shows up as a diff to a `.md` file, not tangled into a code diff, and versioning is just git history on those files. No explicit multi-version registry (e.g., `v1/`, `v2/` folders) was built, since nothing yet needs to run two prompt versions side by side; add one if that becomes real.
+
+### `ConversationMessage` and `Course.stage`
+The interview happens *before* a course has a title, modules, or anything else, which is awkward if conversation history is supposed to belong to a course. Resolved by creating the `Course` row immediately when a learner starts (title="New Course", empty description/prerequisites/modules, `stage="interview"`), so its history has something to attach to from message one. `Course.stage` moves through `interview` -> `outline_review` -> `active` (no `completed` transition wired yet, that's course-progress work, not creation). `ConversationMessage` (`app/models.py`) holds `course_id`, `role` (`user`/`assistant`), a free-form `kind` tag (`interview_answer`, `interview_question`, `outline_presented`, `outline_revision_request`, `outline_approved`, not a rigid enum so new kinds don't need a migration), `content`, and `created_at`. `Course.parent_course_id` (self-referential, nullable) is added now for future "keep going / dive deeper / branch off" lineage, but no branch/extend endpoint exists yet; that's still Phase 2, per the roadmap.
+
+### `app/services/course_generation.py`
+The interview loop (`start_course`, `submit_interview_answer`) counts `interview_question`-kind messages to decide when to stop (capped at `MAX_INTERVIEW_QUESTIONS = 10`, matching the PRD's "roughly ten questions"), asks the model for the next question via the `course_interview` prompt, and expects strict JSON back (`{"done": bool, "question": str|null}`). The outline loop (`generate_outline`, `submit_outline_feedback`, `approve_outline`) does the same with the `course_outline` prompt, replacing `Course.modules` wholesale on (re)generation, which correctly cascades-deletes any prior modules via the existing `delete-orphan` relationship config. `approve_outline` flips `stage` to `active` and starts the first module. A small `_parse_json_response` helper strips common ```` ```json ```` code-fence wrapping before parsing, since real models often add that despite being told not to.
+
+Two internal-only pieces, not part of the public API: `CourseNotFoundError` (a domain exception the route layer catches and turns into a 404, keeping "not found" handling out of the service functions' control flow) and the LLM model string is a hardcoded `DEFAULT_MODEL` constant for now, since per-user model selection from `UserSettings` isn't wired into generation yet.
+
+### Test-mode mocking lives at the generation-function level, not in `complete()`
+This was the wrinkle flagged before building: `app/services/llm.py`'s `LLM_TEST_MODE` mock just echoes text back, which can't satisfy something that needs structured JSON. So `_next_interview_step` and `_generate_outline_content` each have their own `LLM_TEST_MODE` branch returning realistic canned structured data directly (a deterministic "ask up to 10 questions" sequence; a canned 3-module outline), bypassing `complete()`/JSON-parsing entirely in test mode. This is what let the test suite verify real control flow (does the interview actually stop at 10, do modules actually get created) without a live model.
+
+### A real bug this surfaced: `test` and "in-memory database" were the same flag
+`create_app(test=True)` used to switch to `sqlite:///:memory:` as a side effect of enabling `LLM_TEST_MODE`. That's correct for the pytest suite (which wants both together), but wrong for running the dev server day-to-day: `BONSAI_TEST_MODE=true python run.py` (exactly what avoiding LLM costs requires) silently lost access to the real, persisted database. Fixed by splitting into two independent parameters: `create_app(test: bool, in_memory_db: bool = False)`. `tests/conftest.py`'s `app` fixture now explicitly passes both (`test=True, in_memory_db=True`); `run.py` never passes `in_memory_db`, so the dev server always sees the real file regardless of LLM test mode. Caught by manually restarting the dev server in test mode mid-session and noticing the seeded courses disappeared, not by the test suite, since the test suite's fixture was already (correctly, for its own purposes) requesting both flags together.
+
+### Frontend
+`CreateCourse.tsx` no longer scripts a fixed question list: it calls `startCourse(message)` on the first answer, then `submitInterviewAnswer(courseId, answer)` for each one after, rendering whatever question the backend returns. Progress dots now show progress toward the shared `MAX_QUESTIONS = 10` constant (duplicated by hand between frontend and backend, no shared-config layer between them yet) rather than a fixed local question array. When the backend signals `done`, it calls `generateOutline(courseId)` and navigates to `/create/review/:courseId` (the route gained a `:courseId` param it didn't have before). `OutlineReview.tsx` fetches the real course by id on mount, sends revision feedback to `submitOutlineFeedback`, and "Start Learning" calls `approveOutline` then `AppDataContext.refreshCourses()` (a new context method that just re-fetches the course list) before navigating to My Courses, so the newly-active course actually shows up without a page reload. Attached files are still frontend-only preview (unchanged from Phase 0): nothing uploads them to the backend, since document ingestion is still deferred.
+
+### Still deferred (at the time this section was written)
+Module *content* generation (`POST /api/modules/<id>/generate-activities`, so a module's actual readings/quizzes/etc. get created when reached) and change-direction (regenerating remaining modules from mid-course feedback) were both in the original proposal but scoped out of this slice to keep it reviewable; they reuse the same generation machinery built here. Document upload/ingestion, the retrieval agent, and branch/extend ("keep going / dive deeper") remain unbuilt.
+
+### Verified
+Full flow confirmed end-to-end with curl against the real dev server (test mode, real database): started a course, answered through all 10 interview questions (confirmed `done` flips exactly on the 10th), generated an outline (3 modules, `stage: outline_review`), approved it (`stage: active`, first module `in_progress`), and confirmed it appeared in `GET /api/courses` alongside the seeded ones. Test course cleaned up afterward.
+
+## Phase 1: Schema enforcement for LLM outputs
+
+Sixth build slice: before this, a malformed or off-spec model response (missing a field, wrong type, invalid JSON) would fail deep inside `_apply_outline` with a confusing `KeyError`, or worse, silently write garbage into the database. Now every prompt's expected response shape is a Pydantic schema, validated right where the response is parsed.
+
+### `app/services/llm_schemas.py`
+`InterviewStepSchema` (`done: bool`, `question: str | None`) and `CourseOutlineSchema`/`CourseModuleSchema` (matching `course_outline.md`'s requested JSON exactly) are Pydantic models. Their field names deliberately use the prompts' own camelCase (`estimatedTimeline`, `learningOutcomes`) rather than PEP 8 snake_case, since these classes exist purely to mirror the external JSON contract, not as general Python domain models. `validate_llm_json(raw: str, schema: type[BaseModel])` combines the markdown-code-fence stripping that used to live in `course_generation.py`, JSON parsing, and schema validation into one call, raising a single `LLMOutputValidationError` for either failure mode (invalid JSON syntax, or valid JSON that doesn't match the schema) rather than leaking a raw `json.JSONDecodeError` or `pydantic.ValidationError`.
+
+Pydantic itself wasn't a new dependency in practice (it was already installed transitively via `litellm`), but it's now an explicit direct dependency in `requirements.txt` since `app` code imports it directly.
+
+### Both the real and mocked generation paths return the same schema types
+`_next_interview_step` and `_generate_outline_content` return `InterviewStepSchema`/`CourseOutlineSchema` instances either way: the real path calls `complete()` then `validate_llm_json(...)`; the `LLM_TEST_MODE` mock path constructs the schema objects directly (`InterviewStepSchema(done=..., question=...)`, `CourseOutlineSchema(title=..., modules=[CourseModuleSchema(...), ...])`). This means the canned test-mode data is held to the exact same shape as real output, so the mocks can't silently drift out of sync with what the schema actually requires. Downstream code (`_advance_interview`, `_apply_outline`) uses attribute access (`result.done`, `outline.modules[i].title`) instead of dict indexing.
+
+### Route-level handling
+The four course-creation routes that call into generation (`create_course`, `post_interview_answer`, `post_generate_outline`, `post_outline_feedback`) catch `LLMOutputValidationError` and return `502` with a description, distinct from the existing `404` (course not found). `approve_outline` doesn't call generation, so it only needs the `404` case. The frontend didn't need any changes for this: `api.ts`'s `request()` already throws on any non-OK status, and `CreateCourse`/`OutlineReview` already catch and show a generic error message.
+
+### Verified
+Two kinds of tests, both necessary: unit tests directly against `validate_llm_json` (valid data passes, invalid JSON syntax and schema-mismatched JSON both raise `LLMOutputValidationError`), and integration tests that run with `LLM_TEST_MODE` off and monkeypatch `litellm.completion` itself to return malformed text, confirming the error actually propagates through the real `complete()` -> `validate_llm_json` path from `start_course`/`generate_outline`, and that the route layer turns it into a `502` rather than a raw 500 crash. The `real_llm_app`/`real_llm_client` fixtures added for this (in `tests/conftest.py`) are the first fixtures in the suite that exercise the non-test-mode code path at all, with the database still isolated and in-memory.
+
+## Phase 1: BYOM model name field
+
+Seventh build slice, small: confirmed a local Ollama instance (`llama3`, at `http://localhost:11434`) actually responds. Actually pointing generation at it needs settings-driven model selection in `course_generation.py`, which isn't built yet, but BYOM settings could only store the endpoint, not which model to ask for at it, so this closes that gap first: `UserSettings.model_provider_byom_model` (nullable string), surfaced as `modelProvider.byomModel` in serialization, accepted by `PUT /api/settings`, and a matching input in `Settings.tsx` (same save-on-blur pattern as `byomEndpoint`, since it isn't secret and shouldn't fire a request per keystroke). Migration applied; verified live against the running dev server.
+
+## Phase 1: Hosted model name + embedding model fields
+
+Eighth build slice, finishing the Settings model-configuration surface. Same gap as BYOM applied to the hosted tier: `hostedProvider` only says *which company* (Anthropic vs OpenAI), not *which model*, and `DEFAULT_MODEL` in `course_generation.py` is still a hardcoded Claude model regardless of what's selected. Added `UserSettings.model_provider_hosted_model` (nullable string, optional, blank means "use a sensible default"), same pattern as `byomModel`.
+
+Also added `UserSettings.embedding_model`, per the PRD's requirement that embedding be independently configurable from the completion model (a learner might reasonably want Anthropic for completion but a local embedding model, or vice versa), so it's a top-level field, not nested under `modelProvider`. Doesn't do anything yet since retrieval and semantic search aren't built; the Settings UI says so explicitly rather than implying it's already wired up.
+
+Both fields, migration, and their `Settings.tsx` inputs (save-on-blur, matching the existing pattern) built the same way as `byomModel` was: model column -> `to_dict()` -> route acceptance -> migration -> frontend type -> frontend field. Verified live against the running dev server.

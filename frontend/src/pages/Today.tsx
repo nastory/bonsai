@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { FileText, PlayCircle } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
-import { findCurrentActivity, findUpNext, activityPath } from '../lib/courseHelpers';
+import { findCurrentActivity, activityPath } from '../lib/courseHelpers';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
@@ -18,7 +18,6 @@ export function Today() {
 
   const inProgressCourse = courses.find((c) => findCurrentActivity(c));
   const current = inProgressCourse && findCurrentActivity(inProgressCourse);
-  const upNext = inProgressCourse && findUpNext(inProgressCourse);
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-10">
@@ -64,23 +63,23 @@ export function Today() {
         </Card>
       )}
 
-      {upNext && inProgressCourse && (
+      {current && inProgressCourse && (
         <div className="mt-6">
           <p className="mb-2 text-sm font-medium text-bonsai-text-muted">Up next</p>
           <Link
-            to={activityPath(inProgressCourse.id, upNext.module.id, upNext.activity.id)}
+            to={activityPath(inProgressCourse.id, current.module.id, current.activity.id)}
             className="flex items-center gap-3 rounded-lg border border-bonsai-border bg-white px-4 py-3 hover:bg-bonsai-cream"
           >
-            {upNext.activity.type === 'video' ? (
+            {current.activity.type === 'video' ? (
               <PlayCircle className="h-5 w-5 text-bonsai-text-muted" />
             ) : (
               <FileText className="h-5 w-5 text-bonsai-text-muted" />
             )}
             <div>
-              <p className="text-sm font-medium text-bonsai-text">{upNext.activity.title}</p>
-              {upNext.activity.estimatedMinutes && (
+              <p className="text-sm font-medium text-bonsai-text">{current.activity.title}</p>
+              {current.activity.estimatedMinutes && (
                 <p className="text-xs text-bonsai-text-muted">
-                  Lesson {upNext.indexInModule + 1} • {upNext.activity.estimatedMinutes} min
+                  Lesson {current.indexInModule + 1} • {current.activity.estimatedMinutes} min
                 </p>
               )}
             </div>

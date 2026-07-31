@@ -2,7 +2,7 @@
 
 An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
 
-**Status:** Phase 1 (in progress). Phase 0's React front-end shell still runs entirely against static fixture data. The backend now has a real test suite, a LiteLLM wrapper (with a mocked test mode so development doesn't require an API key or incur cost), and a persistence layer for courses/modules/activities. Course creation, generation, retrieval, and the REST API connecting the frontend to any of this are still ahead.
+**Status:** Phase 1 (in progress). Creating a course, running the interview, generating and revising an outline, and approving it are all real now, backed by the LLM (mocked in test mode), not a scripted Phase 0 flow. Completing a lesson activity persists too. Every LLM response is validated against an explicit schema before it touches the database, so a malformed model response fails clearly (a 502) instead of corrupting data or crashing with a confusing error. The backend has a real test suite, a LiteLLM wrapper, prompts kept as separate versionable markdown files, a per-course conversation history, and REST routes over all of it. What's still ahead: generating a module's actual lesson content when the learner reaches it, changing direction mid-course, document ingestion, and the retrieval agent.
 
 ## Motivation
 I love continuous learning, but I get tired of having to search through sites like Udemy or Coursera looking for courses, not finding exactly what I need, and then paying for a course that only loosely lines up with what I actually want to learn.
@@ -26,11 +26,16 @@ bonsai/
 ├── bonsai_prd.md  # product requirements document
 ├── design.md      # design document (Phase 0, plus a Phase 1 section)
 ├── frontend/      # React + TypeScript + Vite + Tailwind SPA
-└── backend/       # Flask app: health check, LiteLLM wrapper, course/module/activity persistence
+└── backend/       # Flask app: persistence, LiteLLM wrapper, REST routes
     ├── app/
-    │   ├── models.py       # Course, Module, Activity (SQLAlchemy)
-    │   ├── services/llm.py # LiteLLM wrapper, mocked in test mode
-    │   └── routes/
+    │   ├── models.py            # Course, Module, Activity, SourceMaterial, UserSettings, ConversationMessage
+    │   ├── prompts/              # LLM prompts as markdown files, kept out of code for clean versioning
+    │   ├── services/
+    │   │   ├── llm.py            # LiteLLM wrapper, mocked in test mode
+    │   │   ├── llm_schemas.py    # Pydantic schemas validating LLM JSON output
+    │   │   ├── prompts.py        # loads app/prompts/*.md, fills in ${variables}
+    │   │   └── course_generation.py  # interview -> outline -> approve
+    │   └── routes/               # health, courses, settings, activities, course_creation
     ├── migrations/          # Flask-Migrate / Alembic schema migrations
     └── tests/               # pytest suite
 ```
@@ -53,20 +58,34 @@ python -m venv venv          # already created if you're continuing this session
 source venv/bin/activate
 pip install -r requirements.txt
 flask db upgrade             # creates instance/bonsai.db from the latest migration
+python seed.py                # inserts example courses if the database is empty
 python run.py
 ```
 
-By default this makes real LiteLLM calls, which needs a provider API key configured (not built yet; there's no Settings-to-backend wiring in this slice). To run without one, use test mode instead, which returns canned responses for every LLM call:
+By default this makes real LiteLLM calls, which needs a provider API key configured (there's no Settings-to-backend wiring for that yet). To run without one, and avoid API costs entirely during development, use test mode instead, which returns canned responses for every LLM call while still using your real, persistent database:
 
 ```
 BONSAI_TEST_MODE=true python run.py
 ```
 
-The only endpoint right now is a health check:
+Endpoints that exist now:
 
 ```
 curl http://localhost:5000/api/health
 # {"status": "ok"}
+
+curl http://localhost:5000/api/courses
+# [] (or the seeded example courses, if you ran seed.py)
+
+curl http://localhost:5000/api/settings
+# {"name": "Learner", "feedbackTone": "encouraging", ...}
+
+curl -X POST http://localhost:5000/api/activities/<activity-id>/complete
+# the full parent course, with that activity (and the next one it unlocks) updated
+
+curl -X POST http://localhost:5000/api/courses -d '{"message": "I want to learn woodworking"}'
+# {"courseId": "...", "done": false, "question": "..."}
+# then POST .../interview-messages, .../generate-outline, .../outline-feedback, .../approve-outline
 ```
 
 ## Running the backend tests
@@ -91,4 +110,4 @@ flask db migrate -m "describe the change"
 flask db upgrade
 ```
 
-The frontend doesn't call the backend yet. Everything still renders from fixtures in `frontend/src/data/`, and wiring the two together is upcoming Phase 1 work.
+The frontend fetches courses and settings from the backend on load (see `frontend/src/lib/api.ts`), and creating a course through the app now runs the real interview -> outline -> approve flow. Run both servers together, with the backend seeded, to see it end to end. A newly-created course's modules won't have real lesson content yet: generating a module's activities when the learner reaches it isn't built.

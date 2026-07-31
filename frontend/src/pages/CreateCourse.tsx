@@ -4,27 +4,21 @@ import { ArrowRight, Paperclip, X } from 'lucide-react';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { Input } from '../components/ui/Input';
 import { cn } from '../components/ui/cn';
+import { startCourse, submitInterviewAnswer, generateOutline } from '../lib/api';
 
 interface Message {
   from: 'bonsai' | 'user';
   text: string;
 }
 
-// In the real product these are generated dynamically based on the topic and
-// prior answers (see PRD "Course Creation & Interview Flow"). Phase 0 scripts
-// a fixed, open-ended sequence to exercise the same free-text UI.
-const FOLLOW_UP_QUESTIONS = [
-  'What is your current experience level with this?',
-  "What's motivating you to learn this right now?",
-  'Would you like a broad working foundation, or go deep enough to specialize?',
-  'Is there a specific area you want to make sure we cover?',
-];
-
-const TOTAL_STEPS = FOLLOW_UP_QUESTIONS.length + 1;
+// Matches the backend's MAX_INTERVIEW_QUESTIONS (app/services/course_generation.py).
+// Not shared code between frontend/backend yet, just kept in sync by hand.
+const MAX_QUESTIONS = 10;
 
 export function CreateCourse() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(0);
+  const [courseId, setCourseId] = useState<string | null>(null);
+  const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     {
       from: 'bonsai',
@@ -50,43 +44,38 @@ export function CreateCourse() {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const answer = inputValue.trim();
-    if (!answer || generating) return;
+    const text = inputValue.trim();
+    if (!text || generating) return;
 
-    const userMessage: Message = { from: 'user', text: answer };
+    setMessages((prev) => [...prev, { from: 'user', text }]);
     setInputValue('');
 
-    if (step === 0) {
+    try {
+      const step = courseId ? await submitInterviewAnswer(courseId, text) : await startCourse(text);
+      if (!courseId) setCourseId(step.courseId);
+      setQuestionsAnswered((n) => n + 1);
+
+      if (step.done) {
+        setMessages((prev) => [
+          ...prev,
+          { from: 'bonsai', text: "Perfect, that's everything I need. Drafting your course outline..." },
+        ]);
+        setGenerating(true);
+        const course = await generateOutline(step.courseId);
+        navigate(`/create/review/${course.id}`, { state: { files: attachedFiles } });
+      } else {
+        setMessages((prev) => [...prev, { from: 'bonsai', text: step.question ?? '' }]);
+      }
+    } catch (err) {
+      console.error('Course creation failed:', err);
       setMessages((prev) => [
         ...prev,
-        userMessage,
-        {
-          from: 'bonsai',
-          text: 'Great! To build the right course for you, I have a few quick questions.',
-        },
-        { from: 'bonsai', text: FOLLOW_UP_QUESTIONS[0] },
+        { from: 'bonsai', text: "Something went wrong on my end. Mind trying that again?" },
       ]);
-      setStep(1);
-      return;
+      setGenerating(false);
     }
-
-    const nextQuestion = FOLLOW_UP_QUESTIONS[step];
-    if (nextQuestion) {
-      setMessages((prev) => [...prev, userMessage, { from: 'bonsai', text: nextQuestion }]);
-      setStep((s) => s + 1);
-      return;
-    }
-
-    // Last question just answered — hand off to the outline.
-    setMessages((prev) => [
-      ...prev,
-      userMessage,
-      { from: 'bonsai', text: "Perfect, that's everything I need. Drafting your course outline..." },
-    ]);
-    setGenerating(true);
-    setTimeout(() => navigate('/create/review', { state: { files: attachedFiles } }), 900);
   };
 
   return (
@@ -156,12 +145,12 @@ export function CreateCourse() {
       </form>
 
       <div className="mt-4 flex justify-center gap-2">
-        {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+        {Array.from({ length: MAX_QUESTIONS }).map((_, i) => (
           <span
             key={i}
             className={cn(
               'h-2 w-2 rounded-full',
-              i < step ? 'bg-bonsai-green' : i === step ? 'bg-bonsai-green/50' : 'bg-bonsai-border',
+              i < questionsAnswered ? 'bg-bonsai-green' : 'bg-bonsai-border',
             )}
           />
         ))}

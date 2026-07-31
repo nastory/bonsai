@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -37,6 +38,63 @@ export function Settings() {
   const { user, updateUserSettings } = useAppData();
   const { modelProvider } = user;
 
+  // The backend never sends the real API key back, so this draft always
+  // starts empty; it exists only to capture a *new* key to save.
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+
+  // byomEndpoint/byomModel aren't secret, so it's fine to prefill and re-sync
+  // when the fetched settings change, but still save on blur rather than per keystroke.
+  const [byomEndpointDraft, setByomEndpointDraft] = useState(modelProvider.byomEndpoint ?? '');
+  useEffect(() => {
+    setByomEndpointDraft(modelProvider.byomEndpoint ?? '');
+  }, [modelProvider.byomEndpoint]);
+
+  const [byomModelDraft, setByomModelDraft] = useState(modelProvider.byomModel ?? '');
+  useEffect(() => {
+    setByomModelDraft(modelProvider.byomModel ?? '');
+  }, [modelProvider.byomModel]);
+
+  const [hostedModelDraft, setHostedModelDraft] = useState(modelProvider.hostedModel ?? '');
+  useEffect(() => {
+    setHostedModelDraft(modelProvider.hostedModel ?? '');
+  }, [modelProvider.hostedModel]);
+
+  const [embeddingModelDraft, setEmbeddingModelDraft] = useState(user.embeddingModel ?? '');
+  useEffect(() => {
+    setEmbeddingModelDraft(user.embeddingModel ?? '');
+  }, [user.embeddingModel]);
+
+  const saveApiKeyIfChanged = () => {
+    if (apiKeyDraft.trim()) {
+      updateUserSettings({ modelProvider: { apiKey: apiKeyDraft.trim() } });
+      setApiKeyDraft('');
+    }
+  };
+
+  const saveByomEndpointIfChanged = () => {
+    if (byomEndpointDraft !== (modelProvider.byomEndpoint ?? '')) {
+      updateUserSettings({ modelProvider: { byomEndpoint: byomEndpointDraft } });
+    }
+  };
+
+  const saveByomModelIfChanged = () => {
+    if (byomModelDraft !== (modelProvider.byomModel ?? '')) {
+      updateUserSettings({ modelProvider: { byomModel: byomModelDraft } });
+    }
+  };
+
+  const saveHostedModelIfChanged = () => {
+    if (hostedModelDraft !== (modelProvider.hostedModel ?? '')) {
+      updateUserSettings({ modelProvider: { hostedModel: hostedModelDraft } });
+    }
+  };
+
+  const saveEmbeddingModelIfChanged = () => {
+    if (embeddingModelDraft !== (user.embeddingModel ?? '')) {
+      updateUserSettings({ embeddingModel: embeddingModelDraft });
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl px-8 py-10">
       <h1 className="text-2xl font-semibold text-bonsai-text">Settings</h1>
@@ -54,7 +112,7 @@ export function Settings() {
               { value: 'hosted', label: 'Hosted' },
               { value: 'byom', label: 'Bring Your Own Model' },
             ]}
-            onChange={(tier) => updateUserSettings({ modelProvider: { ...modelProvider, tier } })}
+            onChange={(tier) => updateUserSettings({ modelProvider: { tier } })}
           />
         </div>
 
@@ -66,19 +124,27 @@ export function Settings() {
                 { value: 'anthropic', label: 'Anthropic' },
                 { value: 'openai', label: 'OpenAI' },
               ]}
-              onChange={(hostedProvider) =>
-                updateUserSettings({ modelProvider: { ...modelProvider, hostedProvider } })
+              onChange={(hostedProvider) => updateUserSettings({ modelProvider: { hostedProvider } })}
+            />
+            <Input
+              placeholder={
+                modelProvider.hostedProvider === 'openai'
+                  ? 'Model (e.g. gpt-4o). Leave blank for a sensible default'
+                  : 'Model (e.g. claude-3-5-sonnet-20241022). Leave blank for a sensible default'
               }
+              value={hostedModelDraft}
+              onChange={(e) => setHostedModelDraft(e.target.value)}
+              onBlur={saveHostedModelIfChanged}
             />
             <Input
               type="password"
-              placeholder="API key"
-              value={modelProvider.apiKey ?? ''}
-              onChange={(e) =>
-                updateUserSettings({ modelProvider: { ...modelProvider, apiKey: e.target.value } })
-              }
+              placeholder={modelProvider.hasApiKey ? 'Enter a new key to replace the current one' : 'API key'}
+              value={apiKeyDraft}
+              onChange={(e) => setApiKeyDraft(e.target.value)}
+              onBlur={saveApiKeyIfChanged}
             />
             <p className="text-xs text-bonsai-text-muted">
+              {modelProvider.hasApiKey ? 'A key is configured. ' : 'No key set yet. '}
               Reliable tool-use support on this path means citations and retrieval work as designed.
             </p>
           </div>
@@ -86,10 +152,15 @@ export function Settings() {
           <div className="mt-4 space-y-3">
             <Input
               placeholder="Local model endpoint (e.g. http://localhost:11434)"
-              value={modelProvider.byomEndpoint ?? ''}
-              onChange={(e) =>
-                updateUserSettings({ modelProvider: { ...modelProvider, byomEndpoint: e.target.value } })
-              }
+              value={byomEndpointDraft}
+              onChange={(e) => setByomEndpointDraft(e.target.value)}
+              onBlur={saveByomEndpointIfChanged}
+            />
+            <Input
+              placeholder="Model name at that endpoint (e.g. llama3)"
+              value={byomModelDraft}
+              onChange={(e) => setByomModelDraft(e.target.value)}
+              onBlur={saveByomModelIfChanged}
             />
             <p className="text-xs text-bonsai-text-muted">
               Best-effort: local models vary in tool-use support, so retrieval and citation quality may be
@@ -97,6 +168,22 @@ export function Settings() {
             </p>
           </div>
         )}
+      </Card>
+
+      <Card className="mt-4">
+        <p className="font-semibold text-bonsai-text">Embedding Model</p>
+        <p className="mt-1 text-sm text-bonsai-text-muted">
+          Used for retrieval ranking and, later, semantic search over your course index. Configurable
+          separately from the completion model above, since it doesn't have to come from the same provider.
+          Doesn't do anything yet: nothing in Bonsai reads this setting until retrieval is built.
+        </p>
+        <Input
+          className="mt-3"
+          placeholder="Embedding model (e.g. text-embedding-3-small, nomic-embed-text)"
+          value={embeddingModelDraft}
+          onChange={(e) => setEmbeddingModelDraft(e.target.value)}
+          onBlur={saveEmbeddingModelIfChanged}
+        />
       </Card>
 
       <Card className="mt-4">

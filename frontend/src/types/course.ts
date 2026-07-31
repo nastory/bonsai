@@ -53,6 +53,8 @@ export interface SourceMaterial {
   url?: string;
 }
 
+export type CourseStage = 'interview' | 'outline_review' | 'active' | 'completed';
+
 export interface Course {
   id: string;
   title: string;
@@ -61,19 +63,60 @@ export interface Course {
   estimatedTimeline: string;
   thumbnailUrl: string;
   progressPercent: number;
+  stage: CourseStage;
   modules: Module[];
   /** Present only for courses created from uploaded documents rather than a typed topic. */
   sourceMaterials?: SourceMaterial[];
+}
+
+/** The result of starting or answering into the course-creation interview. */
+export interface InterviewStep {
+  courseId: string;
+  done: boolean;
+  question: string | null;
+}
+
+export interface ModelProviderSettings {
+  tier: 'hosted' | 'byom';
+  hostedProvider?: 'anthropic' | 'openai';
+  /** Which model to use at the hosted provider (e.g. "claude-3-5-sonnet-20241022"). Blank uses a sensible default. */
+  hostedModel?: string;
+  /** Whether a key is stored on the backend. The raw key is never sent back on read. */
+  hasApiKey: boolean;
+  byomEndpoint?: string;
+  /** Which model to ask for at the BYOM endpoint (e.g. "llama3"). */
+  byomModel?: string;
 }
 
 export interface UserSettings {
   name: string;
   feedbackTone: 'encouraging' | 'straightforward';
   thumbnailGenerationEnabled: boolean;
-  modelProvider: {
-    tier: 'hosted' | 'byom';
+  modelProvider: ModelProviderSettings;
+  /**
+   * Independently configurable from the completion model above, per the
+   * PRD's model-roles requirement. Not used by anything yet (retrieval and
+   * semantic search aren't built), but settable in advance.
+   */
+  embeddingModel?: string;
+}
+
+/**
+ * A partial update sent to PUT /api/settings. Omitted fields (including
+ * nested modelProvider fields) are left untouched by the backend.
+ * `apiKey` is write-only here: it exists to set a new key, never to read one.
+ */
+export interface UserSettingsPatch {
+  name?: string;
+  feedbackTone?: 'encouraging' | 'straightforward';
+  thumbnailGenerationEnabled?: boolean;
+  modelProvider?: {
+    tier?: 'hosted' | 'byom';
     hostedProvider?: 'anthropic' | 'openai';
+    hostedModel?: string;
     apiKey?: string;
     byomEndpoint?: string;
+    byomModel?: string;
   };
+  embeddingModel?: string;
 }

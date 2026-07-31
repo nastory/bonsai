@@ -18,18 +18,6 @@ export function findCurrentActivity(course: Course): ActivityLocation | undefine
   return { course, module, activity: module.activities[indexInModule], indexInModule };
 }
 
-/** The activity right after the current one, for "up next" previews. */
-export function findUpNext(course: Course): ActivityLocation | undefined {
-  const current = findCurrentActivity(course);
-  if (!current) return undefined;
-
-  const nextIndex = current.indexInModule + 1;
-  const nextActivity = current.module.activities[nextIndex];
-  if (!nextActivity) return undefined;
-
-  return { course, module: current.module, activity: nextActivity, indexInModule: nextIndex };
-}
-
 export function activityPath(courseId: string, moduleId: string, activityId: string): string {
   return `/courses/${courseId}/modules/${moduleId}/activities/${activityId}`;
 }

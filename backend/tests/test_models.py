@@ -1,6 +1,6 @@
 """Tests for the Course/Module/Activity persistence models."""
 
-from app.models import Activity, Course, Module
+from app.models import Activity, Course, Module, SourceMaterial
 
 
 def test_create_course_with_modules_and_activities(db) -> None:
@@ -103,3 +103,43 @@ def test_deleting_course_cascades_to_modules_and_activities(db) -> None:
 
     assert db.session.get(Module, "m1") is None
     assert db.session.get(Activity, "a1") is None
+
+
+def test_source_material_belongs_to_a_course(db) -> None:
+    course = Course(
+        id="gpu-programming",
+        title="GPU Programming for ML Engineers",
+        description="d",
+        prerequisites=[],
+        estimated_timeline="6 weeks",
+        thumbnail_url="x",
+    )
+    material = SourceMaterial(
+        id="src-1",
+        course_id="gpu-programming",
+        file_name="Efficient-Memory-Coalescing-in-CUDA-Kernels.pdf",
+        file_path="/data/source_materials/src-1.pdf",
+    )
+
+    db.session.add_all([course, material])
+    db.session.commit()
+
+    fetched = db.session.get(Course, "gpu-programming")
+    assert len(fetched.source_materials) == 1
+    assert fetched.source_materials[0].file_name == "Efficient-Memory-Coalescing-in-CUDA-Kernels.pdf"
+
+
+def test_deleting_course_cascades_to_source_materials(db) -> None:
+    course = Course(
+        id="c1", title="Test Course", description="d", prerequisites=[],
+        estimated_timeline="1 week", thumbnail_url="x",
+    )
+    material = SourceMaterial(id="src-1", course_id="c1", file_name="paper.pdf", file_path="/data/paper.pdf")
+
+    db.session.add_all([course, material])
+    db.session.commit()
+
+    db.session.delete(course)
+    db.session.commit()
+
+    assert db.session.get(SourceMaterial, "src-1") is None

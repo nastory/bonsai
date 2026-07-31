@@ -1,54 +1,69 @@
-import { useState, type FormEvent } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
-
-// Phase 0 shows a fixed sample outline rather than one generated from the
-// interview answers — real generation is Phase 1. "Start Learning" returns to
-// My Courses rather than inserting this into the fixture data, since proving
-// the review/approve interaction is the point here, not full course creation.
-const SAMPLE_OUTLINE = {
-  title: 'Sourdough Bread Baking',
-  description:
-    'A hands-on path from your first starter to consistently good loaves, covering the fermentation science along the way.',
-  prerequisites: ['None, just an oven and some patience'],
-  estimatedTimeline: '3 weeks',
-  modules: [
-    {
-      title: 'Building & Maintaining a Starter',
-      description: 'What a starter actually is, and how to keep one alive.',
-    },
-    {
-      title: 'Dough Fundamentals',
-      description: 'Hydration, gluten development, and reading your dough.',
-    },
-    {
-      title: 'Fermentation & Timing',
-      description: 'Bulk fermentation, proofing, and adjusting for your kitchen.',
-    },
-    {
-      title: 'Shaping, Scoring & Baking Capstone',
-      description: 'Bring it together with your own loaf, start to finish.',
-    },
-  ],
-};
+import { useAppData } from '../context/AppDataContext';
+import { fetchCourse, submitOutlineFeedback, approveOutline } from '../lib/api';
+import type { Course } from '../types/course';
 
 export function OutlineReview() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { courseId } = useParams();
+  const { refreshCourses } = useAppData();
   const attachedFiles = (location.state as { files?: File[] } | null)?.files ?? [];
+
+  const [course, setCourse] = useState<Course | null>(null);
   const [feedback, setFeedback] = useState('');
   const [requested, setRequested] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleRequestChanges = (e: FormEvent) => {
+  useEffect(() => {
+    if (!courseId) return;
+    fetchCourse(courseId)
+      .then(setCourse)
+      .catch((err) => console.error('Failed to load the generated outline:', err));
+  }, [courseId]);
+
+  const handleRequestChanges = async (e: FormEvent) => {
     e.preventDefault();
-    if (!feedback.trim()) return;
-    setRequested(true);
-    setFeedback('');
+    if (!feedback.trim() || !courseId) return;
+    setSubmitting(true);
+    try {
+      const updated = await submitOutlineFeedback(courseId, feedback);
+      setCourse(updated);
+      setRequested(true);
+      setFeedback('');
+    } catch (err) {
+      console.error('Failed to revise the outline:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const handleStartLearning = async () => {
+    if (!courseId) return;
+    setSubmitting(true);
+    try {
+      await approveOutline(courseId);
+      await refreshCourses();
+      navigate('/courses');
+    } catch (err) {
+      console.error('Failed to start the course:', err);
+      setSubmitting(false);
+    }
+  };
+
+  if (!course) {
+    return (
+      <div className="mx-auto max-w-3xl px-8 py-10">
+        <p className="text-sm text-bonsai-text-muted">Drafting your course outline...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-10">
@@ -56,23 +71,25 @@ export function OutlineReview() {
       <p className="mt-1 text-sm text-bonsai-text-muted">Review it, ask for changes, or start learning.</p>
 
       <Card className="mt-6">
-        <p className="text-lg font-semibold text-bonsai-text">{SAMPLE_OUTLINE.title}</p>
-        <p className="mt-2 text-sm text-bonsai-text-muted">{SAMPLE_OUTLINE.description}</p>
+        <p className="text-lg font-semibold text-bonsai-text">{course.title}</p>
+        <p className="mt-2 text-sm text-bonsai-text-muted">{course.description}</p>
 
         <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
           <div>
             <dt className="text-bonsai-text-muted">Estimated timeline</dt>
-            <dd className="font-medium text-bonsai-text">{SAMPLE_OUTLINE.estimatedTimeline}</dd>
+            <dd className="font-medium text-bonsai-text">{course.estimatedTimeline}</dd>
           </div>
           <div>
             <dt className="text-bonsai-text-muted">Prerequisites</dt>
-            <dd className="font-medium text-bonsai-text">{SAMPLE_OUTLINE.prerequisites.join(', ')}</dd>
+            <dd className="font-medium text-bonsai-text">
+              {course.prerequisites.length > 0 ? course.prerequisites.join(', ') : 'None'}
+            </dd>
           </div>
         </dl>
 
         <div className="mt-6 space-y-3">
-          {SAMPLE_OUTLINE.modules.map((module, i) => (
-            <div key={module.title} className="rounded-lg border border-bonsai-border p-3">
+          {course.modules.map((module, i) => (
+            <div key={module.id} className="rounded-lg border border-bonsai-border p-3">
               <Badge>Module {i + 1}</Badge>
               <p className="mt-1 font-medium text-bonsai-text">{module.title}</p>
               <p className="mt-0.5 text-sm text-bonsai-text-muted">{module.description}</p>
@@ -103,18 +120,15 @@ export function OutlineReview() {
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
           placeholder="Ask for changes, e.g. “add more on troubleshooting”"
+          disabled={submitting}
         />
-        <Button type="submit" variant="secondary">
+        <Button type="submit" variant="secondary" disabled={submitting || !feedback.trim()}>
           Request
         </Button>
       </form>
-      {requested && (
-        <p className="mt-2 text-sm text-bonsai-green">
-          Got it. In the full product this would regenerate the outline with your feedback.
-        </p>
-      )}
+      {requested && <p className="mt-2 text-sm text-bonsai-green">Outline updated with your feedback.</p>}
 
-      <Button className="mt-6 w-full" onClick={() => navigate('/courses')}>
+      <Button className="mt-6 w-full" onClick={handleStartLearning} disabled={submitting}>
         Start Learning
       </Button>
     </div>

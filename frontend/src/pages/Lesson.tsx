@@ -52,7 +52,7 @@ export function Lesson() {
   };
 
   const handleContinue = () => {
-    completeActivity(course.id, module.id, activity.id);
+    completeActivity(activity.id);
     if (nextActivity) {
       navigate(activityPath(course.id, module.id, nextActivity.id));
     } else {
