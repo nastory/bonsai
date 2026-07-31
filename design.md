@@ -151,7 +151,8 @@ Backend (`backend/app/routes/health.py`):
 
 ```
 bonsai/
-├── docs/                          # existing PRD, idea doc, feedback docs, mockup
+├── docs/                          # existing idea doc, feedback docs, mockup
+├── bonsai_prd.md                  # moved out of docs/ to the project root
 ├── design.md
 ├── README.md
 ├── frontend/

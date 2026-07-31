@@ -1,6 +1,6 @@
 <h1><img src="frontend/src/assets/logo.svg" width="28" height="28" alt="Bonsai logo" align="center" /> Bonsai</h1>
 
-An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/` for the product background (`bonsai_initial_idea.md`, `bonsai_prd.md`) and `design.md` for the current build's technical design.
+An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
 
 **Status:** Phase 0 — a React front-end shell running against static fixture data, plus a minimal Flask backend skeleton. No real course generation, retrieval, or persistence yet; that's Phase 1.
 
@@ -22,7 +22,8 @@ Recently, I've been on a bonsai kick on TikTok. The meditative patience that goe
 
 ```
 bonsai/
-├── docs/          # PRD, idea doc, mockup, feedback docs
+├── docs/          # idea doc, mockup, feedback docs
+├── bonsai_prd.md  # product requirements document
 ├── design.md      # Phase 0 design document
 ├── frontend/      # React + TypeScript + Vite + Tailwind SPA
 └── backend/       # Flask app skeleton (health check only, for now)
