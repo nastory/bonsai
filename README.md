@@ -2,7 +2,7 @@
 
 An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
 
-**Status:** Phase 0 — a React front-end shell running against static fixture data, plus a minimal Flask backend skeleton. No real course generation, retrieval, or persistence yet; that's Phase 1.
+**Status:** Phase 1 (in progress). Phase 0's React front-end shell still runs entirely against static fixture data. The backend now has a real test suite, a LiteLLM wrapper (with a mocked test mode so development doesn't require an API key or incur cost), and a persistence layer for courses/modules/activities. Course creation, generation, retrieval, and the REST API connecting the frontend to any of this are still ahead.
 
 ## Motivation
 I love continuous learning, but I get tired of having to search through sites like Udemy or Coursera looking for courses, not finding exactly what I need, and then paying for a course that only loosely lines up with what I actually want to learn.
@@ -24,9 +24,15 @@ Recently, I've been on a bonsai kick on TikTok. The meditative patience that goe
 bonsai/
 ├── docs/          # idea doc, mockup, feedback docs
 ├── bonsai_prd.md  # product requirements document
-├── design.md      # Phase 0 design document
+├── design.md      # design document (Phase 0, plus a Phase 1 section)
 ├── frontend/      # React + TypeScript + Vite + Tailwind SPA
-└── backend/       # Flask app skeleton (health check only, for now)
+└── backend/       # Flask app: health check, LiteLLM wrapper, course/module/activity persistence
+    ├── app/
+    │   ├── models.py       # Course, Module, Activity (SQLAlchemy)
+    │   ├── services/llm.py # LiteLLM wrapper, mocked in test mode
+    │   └── routes/
+    ├── migrations/          # Flask-Migrate / Alembic schema migrations
+    └── tests/               # pytest suite
 ```
 
 ## Running the frontend
@@ -46,7 +52,14 @@ cd backend
 python -m venv venv          # already created if you're continuing this session
 source venv/bin/activate
 pip install -r requirements.txt
+flask db upgrade             # creates instance/bonsai.db from the latest migration
 python run.py
+```
+
+By default this makes real LiteLLM calls, which needs a provider API key configured (not built yet; there's no Settings-to-backend wiring in this slice). To run without one, use test mode instead, which returns canned responses for every LLM call:
+
+```
+BONSAI_TEST_MODE=true python run.py
 ```
 
 The only endpoint right now is a health check:
@@ -56,4 +69,26 @@ curl http://localhost:5000/api/health
 # {"status": "ok"}
 ```
 
-The frontend doesn't call the backend yet in Phase 0 — everything renders from fixtures in `frontend/src/data/`.
+## Running the backend tests
+
+```
+cd backend
+source venv/bin/activate
+pip install -r requirements-dev.txt
+python -m pytest -v
+```
+
+The suite always runs in test mode (mocked LLM calls, an in-memory database), so it never needs an API key or touches `instance/bonsai.db`.
+
+## Backend database migrations
+
+Schema changes go through Flask-Migrate:
+
+```
+cd backend
+export FLASK_APP=run.py
+flask db migrate -m "describe the change"
+flask db upgrade
+```
+
+The frontend doesn't call the backend yet. Everything still renders from fixtures in `frontend/src/data/`, and wiring the two together is upcoming Phase 1 work.
