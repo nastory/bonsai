@@ -1,0 +1,20 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - BONSAI_HOST=0.0.0.0
+      - BONSAI_TEST_MODE=${BONSAI_TEST_MODE:-false}
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend

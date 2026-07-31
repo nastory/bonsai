@@ -7,3 +7,4 @@ __pycache__/
 .claude
 *.db
 .pytest_cache/
+backend/instance/

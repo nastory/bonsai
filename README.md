@@ -15,18 +15,21 @@ Recently, I've been on a bonsai kick on TikTok. The meditative patience that goe
 
 ## Prerequisites
 
-- Node.js 20+ and npm (for `frontend/`)
-- Python 3.10+ (for `backend/`)
+- Docker and Docker Compose (easiest way to run both servers together), **or**
+- Node.js 20+ and npm (for `frontend/`) and Python 3.10+ (for `backend/`), to run them natively
 
 ## Project structure
 
 ```
 bonsai/
-├── docs/          # idea doc, mockup, feedback docs
-├── bonsai_prd.md  # product requirements document
-├── design.md      # design document (Phase 0, plus a Phase 1 section)
-├── frontend/      # React + TypeScript + Vite + Tailwind SPA
-└── backend/       # Flask app: persistence, LiteLLM wrapper, REST routes
+├── docs/               # idea doc, mockup, feedback docs
+├── bonsai_prd.md       # product requirements document
+├── design.md           # design document (Phase 0, plus a Phase 1 section)
+├── docker-compose.yml  # runs frontend + backend together, each in its own container
+├── frontend/           # React + TypeScript + Vite + Tailwind SPA
+│   └── Dockerfile
+└── backend/            # Flask app: persistence, LiteLLM wrapper, REST routes
+    ├── Dockerfile
     ├── app/
     │   ├── models.py            # Course, Module, Activity, SourceMaterial, UserSettings, ConversationMessage
     │   ├── prompts/              # LLM prompts as markdown files, kept out of code for clean versioning
@@ -45,7 +48,25 @@ bonsai/
     └── tests/               # pytest suite
 ```
 
-## Running the frontend
+## Running with Docker Compose
+
+The quickest way to get both servers running together:
+
+```
+docker compose up --build
+```
+
+This builds a container for each of `frontend/` and `backend/`, applies database migrations and seeds example courses automatically, and starts both dev servers with hot reload (your local `frontend/` and `backend/` directories are mounted into the containers, so code edits take effect immediately, same as running natively). Visit `http://localhost:5173` for the app; the backend is reachable at `http://localhost:5000`. `instance/bonsai.db` and generated module content land in `backend/instance/` on your host machine, same as running the backend natively, so your data survives `docker compose down`.
+
+By default this makes real LiteLLM calls (a provider API key needs to be configured through Settings once the app is up). To run in test mode instead (mocked LLM calls, no API costs):
+
+```
+BONSAI_TEST_MODE=true docker compose up --build
+```
+
+Skip `--build` on subsequent runs unless you've changed a `Dockerfile` or a dependency file (`requirements.txt`, `package.json`).
+
+## Running the frontend natively
 
 ```
 cd frontend
@@ -55,7 +76,7 @@ npm run dev
 
 Visit the URL Vite prints (defaults to `http://localhost:5173`).
 
-## Running the backend
+## Running the backend natively
 
 ```
 cd backend

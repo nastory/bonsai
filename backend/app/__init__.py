@@ -1,6 +1,7 @@
 """Flask application factory for the Bonsai backend."""
 
 import os
+import tempfile
 
 from flask import Flask
 from flask_cors import CORS
@@ -23,21 +24,21 @@ def create_app(test: bool = False, in_memory_db: bool = False) -> Flask:
             instead of hitting a real provider. Used for local development
             without an API key and for the automated test suite.
         in_memory_db: When True, points the database at an in-memory SQLite
-            instance instead of the real data file. Independent of `test`:
-            day-to-day development wants mocked LLM calls against your real,
-            persistent data, while the automated test suite wants both
-            mocked calls and a throwaway database.
+            instance instead of the real data file, and generated activity
+            content (see app/services/content_storage.py) at a throwaway
+            temp directory instead of the real instance/ folder. Independent
+            of `test`: day-to-day development wants mocked LLM calls against
+            your real, persistent data, while the automated test suite wants
+            a fully disposable database and content files.
 
     Returns:
         A configured Flask application with CORS, the database, and all
         blueprints registered.
     """
-    app = Flask(__name__, instance_relative_config=True)
+    instance_path = tempfile.mkdtemp() if in_memory_db else None
+    app = Flask(__name__, instance_relative_config=True, instance_path=instance_path)
     app.config["LLM_TEST_MODE"] = test
 
-    # Always needed, independent of in_memory_db: generated activity content
-    # (see app/services/content_storage.py) lives on disk under instance_path
-    # even when the database itself is an in-memory throwaway.
     os.makedirs(app.instance_path, exist_ok=True)
 
     if in_memory_db:
