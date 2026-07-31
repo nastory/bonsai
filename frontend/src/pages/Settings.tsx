@@ -41,6 +41,7 @@ export function Settings() {
   // The backend never sends the real API key back, so this draft always
   // starts empty; it exists only to capture a *new* key to save.
   const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [tavilyKeyDraft, setTavilyKeyDraft] = useState('');
 
   // byomEndpoint/byomModel aren't secret, so it's fine to prefill and re-sync
   // when the fetched settings change, but still save on blur rather than per keystroke.
@@ -68,6 +69,13 @@ export function Settings() {
     if (apiKeyDraft.trim()) {
       updateUserSettings({ modelProvider: { apiKey: apiKeyDraft.trim() } });
       setApiKeyDraft('');
+    }
+  };
+
+  const saveTavilyKeyIfChanged = () => {
+    if (tavilyKeyDraft.trim()) {
+      updateUserSettings({ tavilyApiKey: tavilyKeyDraft.trim() });
+      setTavilyKeyDraft('');
     }
   };
 
@@ -184,6 +192,26 @@ export function Settings() {
           onChange={(e) => setEmbeddingModelDraft(e.target.value)}
           onBlur={saveEmbeddingModelIfChanged}
         />
+      </Card>
+
+      <Card className="mt-4">
+        <p className="font-semibold text-bonsai-text">Retrieval (Tavily)</p>
+        <p className="mt-1 text-sm text-bonsai-text-muted">
+          Powers the web search used to ground and cite course content. This is a separate key from whichever
+          LLM provider you use above, needed regardless of hosted vs. Bring Your Own Model. Doesn't do
+          anything yet: the retrieval agent isn't built.
+        </p>
+        <Input
+          className="mt-3"
+          type="password"
+          placeholder={user.hasTavilyApiKey ? 'Enter a new key to replace the current one' : 'Tavily API key'}
+          value={tavilyKeyDraft}
+          onChange={(e) => setTavilyKeyDraft(e.target.value)}
+          onBlur={saveTavilyKeyIfChanged}
+        />
+        <p className="mt-2 text-xs text-bonsai-text-muted">
+          {user.hasTavilyApiKey ? 'A key is configured.' : 'No key set yet.'}
+        </p>
       </Card>
 
       <Card className="mt-4">

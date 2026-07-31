@@ -10,6 +10,7 @@ from app.routes.activities import activities_bp
 from app.routes.course_creation import course_creation_bp
 from app.routes.courses import courses_bp
 from app.routes.health import health_bp
+from app.routes.modules import modules_bp
 from app.routes.settings import settings_bp
 
 
@@ -34,10 +35,14 @@ def create_app(test: bool = False, in_memory_db: bool = False) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
     app.config["LLM_TEST_MODE"] = test
 
+    # Always needed, independent of in_memory_db: generated activity content
+    # (see app/services/content_storage.py) lives on disk under instance_path
+    # even when the database itself is an in-memory throwaway.
+    os.makedirs(app.instance_path, exist_ok=True)
+
     if in_memory_db:
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     else:
-        os.makedirs(app.instance_path, exist_ok=True)
         db_path = os.path.join(app.instance_path, "bonsai.db")
         app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -53,5 +58,6 @@ def create_app(test: bool = False, in_memory_db: bool = False) -> Flask:
     app.register_blueprint(settings_bp)
     app.register_blueprint(activities_bp)
     app.register_blueprint(course_creation_bp)
+    app.register_blueprint(modules_bp)
 
     return app

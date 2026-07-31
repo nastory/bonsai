@@ -137,16 +137,22 @@ class Activity(db.Model):
         """Serialize to the shape frontend/src/types/course.ts's Activity expects.
 
         Content-heavy fields (body, citations, question, options, prompt,
-        checkPrompt) will be read from the file at content_path once
-        generation exists; omitted here since nothing populates them yet.
+        checkPrompt) are read from the file at content_path and merged in,
+        once module generation has populated it; omitted entirely for
+        activities that haven't been generated yet.
         """
-        return {
+        data: dict[str, Any] = {
             "id": self.id,
             "type": self.activity_type,
             "title": self.title,
             "status": self.status,
             "estimatedMinutes": self.estimated_minutes,
         }
+        if self.content_path:
+            from app.services.content_storage import load_activity_content
+
+            data.update(load_activity_content(self.content_path))
+        return data
 
 
 class SourceMaterial(db.Model):
@@ -222,6 +228,9 @@ class UserSettings(db.Model):
     # PRD's model-roles requirement. Not tied to a tier/provider of its own
     # yet since nothing (retrieval, semantic search) actually uses it yet.
     embedding_model = db.Column(db.String, nullable=True)
+    # Separate from the LLM provider entirely, per the PRD: retrieval needs
+    # its own Tavily key regardless of hosted vs. BYOM.
+    tavily_api_key = db.Column(db.String, nullable=True)
 
     @classmethod
     def get_or_create(cls) -> "UserSettings":
@@ -257,4 +266,5 @@ class UserSettings(db.Model):
                 "hasApiKey": bool(self.model_provider_api_key),
             },
             "embeddingModel": self.embedding_model,
+            "hasTavilyApiKey": bool(self.tavily_api_key),
         }

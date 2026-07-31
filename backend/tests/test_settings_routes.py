@@ -100,3 +100,20 @@ def test_put_settings_partial_update_preserves_embedding_model(client, db) -> No
     response = client.put("/api/settings", json={"name": "Nigel Story"})
 
     assert response.get_json()["embeddingModel"] == "text-embedding-3-small"
+
+
+def test_put_settings_stores_tavily_key_but_never_returns_it(client, db) -> None:
+    response = client.put("/api/settings", json={"tavilyApiKey": "tvly-super-secret"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["hasTavilyApiKey"] is True
+    assert "tavilyApiKey" not in body
+
+
+def test_put_settings_partial_update_preserves_tavily_key(client, db) -> None:
+    client.put("/api/settings", json={"tavilyApiKey": "tvly-super-secret"})
+
+    response = client.put("/api/settings", json={"name": "Nigel Story"})
+
+    assert response.get_json()["hasTavilyApiKey"] is True

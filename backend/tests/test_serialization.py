@@ -29,6 +29,27 @@ def test_activity_to_dict_uses_camel_case_and_type_field() -> None:
     }
 
 
+def test_activity_to_dict_merges_content_from_content_path(tmp_path) -> None:
+    content_file = tmp_path / "a1.json"
+    content_file.write_text('{"body": "Some reading content.", "question": null}')
+    activity = Activity(
+        id="a1",
+        module_id="m1",
+        position=0,
+        activity_type="reading",
+        title="What Is a GPU, Really?",
+        status="in_progress",
+        estimated_minutes=15,
+        content_path=str(content_file),
+    )
+
+    result = activity.to_dict()
+
+    assert result["body"] == "Some reading content."
+    assert result["question"] is None
+    assert result["id"] == "a1"
+
+
 def test_module_to_dict_includes_nested_activities() -> None:
     module = Module(
         id="m1",
@@ -161,3 +182,20 @@ def test_user_settings_to_dict_embedding_model_defaults_to_none() -> None:
     result = settings.to_dict()
 
     assert result["embeddingModel"] is None
+
+
+def test_user_settings_to_dict_never_echoes_the_raw_tavily_key() -> None:
+    settings = UserSettings(id=1, tavily_api_key="tvly-super-secret")
+
+    result = settings.to_dict()
+
+    assert result["hasTavilyApiKey"] is True
+    assert "tavilyApiKey" not in result
+
+
+def test_user_settings_to_dict_has_tavily_api_key_defaults_to_false() -> None:
+    settings = UserSettings(id=1)
+
+    result = settings.to_dict()
+
+    assert result["hasTavilyApiKey"] is False

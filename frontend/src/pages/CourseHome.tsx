@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Check, Circle, Lock } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
@@ -10,7 +10,7 @@ import { cn } from '../components/ui/cn';
 
 export function CourseHome() {
   const { courseId } = useParams();
-  const { getCourse } = useAppData();
+  const { getCourse, generateModuleActivities } = useAppData();
   const course = courseId ? getCourse(courseId) : undefined;
 
   const [expandedModules, setExpandedModules] = useState<Set<string>>(() => {
@@ -18,6 +18,20 @@ export function CourseHome() {
     const current = findCurrentActivity(course);
     return new Set<string>(current ? [current.module.id] : []);
   });
+
+  // A module that's in progress but hasn't had its activities generated yet
+  // (e.g. the learner just reached it) needs a one-time trigger. Guarded by
+  // this ref so a re-render (or the course refreshing mid-generation)
+  // doesn't fire a duplicate request.
+  const triggeredModuleIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!course) return;
+    const pendingModule = course.modules.find((m) => m.status === 'in_progress' && m.activities.length === 0);
+    if (pendingModule && !triggeredModuleIds.current.has(pendingModule.id)) {
+      triggeredModuleIds.current.add(pendingModule.id);
+      generateModuleActivities(pendingModule.id);
+    }
+  }, [course, generateModuleActivities]);
 
   if (!course) {
     return (

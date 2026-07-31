@@ -7,7 +7,7 @@ called and its response is unwrapped to plain text.
 
 from flask import Flask
 
-from app.services.llm import complete
+from app.services.llm import complete, complete_with_tools
 
 
 class _FakeMessage:
@@ -65,3 +65,124 @@ def test_complete_calls_litellm_when_not_in_test_mode(monkeypatch) -> None:
     assert result == "a real response"
     assert captured["model"] == "claude-3-5-sonnet-20241022"
     assert captured["messages"] == [{"role": "user", "content": "Hi"}]
+
+
+def test_complete_forwards_api_key_and_api_base_when_given(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _FakeResponse("ok")
+
+    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+    with real_app.app_context():
+        complete(
+            messages=[{"role": "user", "content": "Hi"}],
+            model="ollama/llama3",
+            api_key="sk-test",
+            api_base="http://localhost:11434",
+        )
+
+    assert captured["model"] == "ollama/llama3"
+    assert captured["api_key"] == "sk-test"
+    assert captured["api_base"] == "http://localhost:11434"
+
+
+class _FakeToolCall:
+    def __init__(self, call_id: str, name: str, arguments: str) -> None:
+        self.id = call_id
+        self.function = _FakeFunction(name, arguments)
+
+
+class _FakeFunction:
+    def __init__(self, name: str, arguments: str) -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _FakeMessageWithTools:
+    def __init__(self, content: str | None, tool_calls: list | None) -> None:
+        self.content = content
+        self.tool_calls = tool_calls
+
+
+class _FakeChoiceWithTools:
+    def __init__(self, message: _FakeMessageWithTools) -> None:
+        self.message = message
+
+
+class _FakeResponseWithTools:
+    def __init__(self, message: _FakeMessageWithTools) -> None:
+        self.choices = [_FakeChoiceWithTools(message)]
+
+
+def test_complete_with_tools_returns_the_raw_message(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    fake_message = _FakeMessageWithTools("a final answer", None)
+    monkeypatch.setattr(
+        "app.services.llm.litellm.completion", lambda **kwargs: _FakeResponseWithTools(fake_message)
+    )
+
+    with real_app.app_context():
+        result = complete_with_tools(
+            messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022", tools=[]
+        )
+
+    assert result is fake_message
+    assert result.content == "a final answer"
+    assert result.tool_calls is None
+
+
+def test_complete_with_tools_forwards_tools_and_model_config(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+    tool_calls = [_FakeToolCall("call-1", "web_search", '{"query": "GPUs"}')]
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _FakeResponseWithTools(_FakeMessageWithTools(None, tool_calls))
+
+    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+    tools = [{"type": "function", "function": {"name": "web_search"}}]
+    with real_app.app_context():
+        result = complete_with_tools(
+            messages=[{"role": "user", "content": "Hi"}],
+            model="ollama/llama3",
+            tools=tools,
+            api_key="sk-test",
+            api_base="http://localhost:11434",
+        )
+
+    assert captured["model"] == "ollama/llama3"
+    assert captured["tools"] == tools
+    assert captured["api_key"] == "sk-test"
+    assert captured["api_base"] == "http://localhost:11434"
+    assert result.tool_calls == tool_calls
+
+
+def test_complete_omits_api_key_and_api_base_when_not_given(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _FakeResponse("ok")
+
+    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+    with real_app.app_context():
+        complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022")
+
+    assert "api_key" not in captured
+    assert "api_base" not in captured

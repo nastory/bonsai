@@ -2,7 +2,7 @@
 
 An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
 
-**Status:** Phase 1 (in progress). Creating a course, running the interview, generating and revising an outline, and approving it are all real now, backed by the LLM (mocked in test mode), not a scripted Phase 0 flow. Completing a lesson activity persists too. Every LLM response is validated against an explicit schema before it touches the database, so a malformed model response fails clearly (a 502) instead of corrupting data or crashing with a confusing error. The backend has a real test suite, a LiteLLM wrapper, prompts kept as separate versionable markdown files, a per-course conversation history, and REST routes over all of it. What's still ahead: generating a module's actual lesson content when the learner reaches it, changing direction mid-course, document ingestion, and the retrieval agent.
+**Status:** Phase 1 (in progress). Creating a course, running the interview, generating and revising an outline, and approving it are all real now, backed by the LLM (mocked in test mode), not a scripted Phase 0 flow, and generation actually respects whatever provider/model you've configured in Settings, hosted or a local Ollama model, verified against a real running Ollama instance. A module's actual lesson content (readings, quizzes, essays, discussions, projects) now generates the first time a learner reaches it, also verified against real Ollama. When a Tavily API key is configured, module generation routes through a retrieval agent that searches and fetches real web pages in an iterative loop before writing content, attaching citations to what it generates; built and fully tested against mocked calls, with live Tavily verification still pending. Completing a lesson activity persists too. Every LLM response is validated against an explicit schema before it touches the database, so a malformed model response fails clearly (a 502) instead of corrupting data or crashing with a confusing error. Settings covers hosted/BYOM model names, an embedding model (still unused, since semantic search isn't built), and the Tavily key. What's still ahead: changing direction mid-course, document ingestion, and AI evals (automated quality grading for generated content, see `design.md`'s Roadmap section).
 
 ## Motivation
 I love continuous learning, but I get tired of having to search through sites like Udemy or Coursera looking for courses, not finding exactly what I need, and then paying for a course that only loosely lines up with what I actually want to learn.
@@ -33,9 +33,14 @@ bonsai/
     │   ├── services/
     │   │   ├── llm.py            # LiteLLM wrapper, mocked in test mode
     │   │   ├── llm_schemas.py    # Pydantic schemas validating LLM JSON output
+    │   │   ├── model_selection.py    # UserSettings -> model/api_key/api_base for complete()
     │   │   ├── prompts.py        # loads app/prompts/*.md, fills in ${variables}
-    │   │   └── course_generation.py  # interview -> outline -> approve
-    │   └── routes/               # health, courses, settings, activities, course_creation
+    │   │   ├── content_storage.py    # saves/loads an activity's generated content to/from disk
+    │   │   ├── retrieval.py          # Tavily web search + page fetch, mocked in test mode
+    │   │   ├── retrieval_agent.py    # search/fetch/evaluate tool-calling loop
+    │   │   ├── course_generation.py  # interview -> outline -> approve
+    │   │   └── module_generation.py  # generates a module's activities on demand, retrieval-grounded if a Tavily key is set
+    │   └── routes/               # health, courses, settings, activities, course_creation, modules
     ├── migrations/          # Flask-Migrate / Alembic schema migrations
     └── tests/               # pytest suite
 ```
@@ -86,6 +91,10 @@ curl -X POST http://localhost:5000/api/activities/<activity-id>/complete
 curl -X POST http://localhost:5000/api/courses -d '{"message": "I want to learn woodworking"}'
 # {"courseId": "...", "done": false, "question": "..."}
 # then POST .../interview-messages, .../generate-outline, .../outline-feedback, .../approve-outline
+
+curl -X POST http://localhost:5000/api/modules/<module-id>/generate-activities
+# the full parent course, with that module's activities generated (idempotent: a
+# module that already has activities is returned unchanged)
 ```
 
 ## Running the backend tests
@@ -110,4 +119,4 @@ flask db migrate -m "describe the change"
 flask db upgrade
 ```
 
-The frontend fetches courses and settings from the backend on load (see `frontend/src/lib/api.ts`), and creating a course through the app now runs the real interview -> outline -> approve flow. Run both servers together, with the backend seeded, to see it end to end. A newly-created course's modules won't have real lesson content yet: generating a module's activities when the learner reaches it isn't built.
+The frontend fetches courses and settings from the backend on load (see `frontend/src/lib/api.ts`), and creating a course through the app now runs the real interview -> outline -> approve flow. Run both servers together, with the backend seeded, to see it end to end. Reaching an in-progress module with no activities yet (e.g. a freshly-approved course, or one of the seeded example courses) triggers real lesson-content generation automatically; `CourseHome.tsx` shows "Generating..." until it lands.

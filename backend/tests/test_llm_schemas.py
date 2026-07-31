@@ -12,6 +12,7 @@ from app.services.llm_schemas import (
     CourseOutlineSchema,
     InterviewStepSchema,
     LLMOutputValidationError,
+    ModuleActivitiesSchema,
     validate_llm_json,
 )
 
@@ -84,3 +85,64 @@ def test_validate_llm_json_raises_when_module_missing_required_field() -> None:
 
     with pytest.raises(LLMOutputValidationError):
         validate_llm_json(raw, CourseOutlineSchema)
+
+
+def test_validate_llm_json_accepts_well_formed_module_activities() -> None:
+    raw = """
+    {
+        "activities": [
+            {"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."},
+            {"type": "quiz", "title": "Check", "estimatedMinutes": 5, "question": "Why?", "options": ["A", "B"]}
+        ]
+    }
+    """
+
+    result = validate_llm_json(raw, ModuleActivitiesSchema)
+
+    assert len(result.activities) == 2
+    assert result.activities[0].type == "reading"
+    assert result.activities[0].body == "Some reading."
+    assert result.activities[1].options == ["A", "B"]
+
+
+def test_validate_llm_json_raises_for_invalid_activity_type() -> None:
+    raw = '{"activities": [{"type": "video", "title": "T", "estimatedMinutes": 10}]}'
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, ModuleActivitiesSchema)
+
+
+def test_validate_llm_json_module_activities_omits_type_specific_fields_when_not_given() -> None:
+    raw = '{"activities": [{"type": "discussion", "title": "Talk", "estimatedMinutes": 10, "prompt": "Thoughts?"}]}'
+
+    result = validate_llm_json(raw, ModuleActivitiesSchema)
+
+    assert result.activities[0].body is None
+    assert result.activities[0].question is None
+    assert result.activities[0].prompt == "Thoughts?"
+
+
+def test_validate_llm_json_accepts_activity_citations() -> None:
+    raw = """
+    {
+        "activities": [
+            {
+                "type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading.",
+                "citations": [{"label": "An Introduction to GPUs", "url": "https://example.com/gpus"}]
+            }
+        ]
+    }
+    """
+
+    result = validate_llm_json(raw, ModuleActivitiesSchema)
+
+    assert result.activities[0].citations[0].label == "An Introduction to GPUs"
+    assert result.activities[0].citations[0].url == "https://example.com/gpus"
+
+
+def test_validate_llm_json_activity_citations_default_to_none() -> None:
+    raw = '{"activities": [{"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."}]}'
+
+    result = validate_llm_json(raw, ModuleActivitiesSchema)
+
+    assert result.activities[0].citations is None

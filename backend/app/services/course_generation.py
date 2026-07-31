@@ -16,10 +16,10 @@ from app.extensions import db
 from app.models import Course, ConversationMessage, Module
 from app.services.llm import complete
 from app.services.llm_schemas import CourseModuleSchema, CourseOutlineSchema, InterviewStepSchema, validate_llm_json
+from app.services.model_selection import resolve_model_config
 from app.services.prompts import load_prompt
 
 MAX_INTERVIEW_QUESTIONS = 10
-DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
 
 
 class CourseNotFoundError(Exception):
@@ -193,7 +193,7 @@ def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepS
         max_questions=MAX_INTERVIEW_QUESTIONS,
         history=_format_history(course),
     )
-    raw = complete(messages=[{"role": "user", "content": prompt}], model=DEFAULT_MODEL)
+    raw = complete(messages=[{"role": "user", "content": prompt}], **resolve_model_config())
     return validate_llm_json(raw, InterviewStepSchema)
 
 
@@ -203,7 +203,7 @@ def _generate_outline_content(course: Course, revision_feedback: str | None) -> 
 
     revision_section = f"The learner asked for these changes: {revision_feedback}" if revision_feedback else ""
     prompt = load_prompt("course_outline", history=_format_history(course), revision_section=revision_section)
-    raw = complete(messages=[{"role": "user", "content": prompt}], model=DEFAULT_MODEL)
+    raw = complete(messages=[{"role": "user", "content": prompt}], **resolve_model_config())
     return validate_llm_json(raw, CourseOutlineSchema)
 
 

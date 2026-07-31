@@ -99,6 +99,8 @@ export interface UserSettings {
    * semantic search aren't built), but settable in advance.
    */
   embeddingModel?: string;
+  /** Whether a Tavily key is stored on the backend. The raw key is never sent back on read. */
+  hasTavilyApiKey: boolean;
 }
 
 /**
@@ -119,4 +121,6 @@ export interface UserSettingsPatch {
     byomModel?: string;
   };
   embeddingModel?: string;
+  /** Write-only, like apiKey: sets a new Tavily key, never reads one back. */
+  tavilyApiKey?: string;
 }

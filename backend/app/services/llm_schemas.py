@@ -12,6 +12,7 @@ to mirror the external JSON contract, not as general Python domain models.
 """
 
 import json
+from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -45,6 +46,32 @@ class CourseOutlineSchema(BaseModel):
     estimatedTimeline: str
     modules: list[CourseModuleSchema]
 
+
+class CitationSchema(BaseModel):
+    """A citation linking generated content back to a real web source."""
+
+    label: str
+    url: str
+
+class GeneratedActivitySchema(BaseModel):
+    """Expected shape of one activity within a module_generation.md response."""
+
+    type: Literal["reading", "quiz", "essay", "project", "discussion", "assessment"]
+    title: str
+    estimatedMinutes: int
+    body: str | None = None
+    question: str | None = None
+    options: list[str] | None = None
+    prompt: str | None = None
+    # Populated when the retrieval agent (see retrieval_agent.py) grounded
+    # this activity's content in real web sources; None when it wasn't used
+    # (no Tavily key configured, or a BYOM model that didn't call the tools).
+    citations: list[CitationSchema] | None = None
+
+class ModuleActivitiesSchema(BaseModel):
+    """Expected shape of a module_generation.md response."""
+
+    activities: list[GeneratedActivitySchema]
 
 def validate_llm_json(raw: str, schema: type[BaseModel]) -> BaseModel:
     """Parse and validate an LLM response against an expected schema.

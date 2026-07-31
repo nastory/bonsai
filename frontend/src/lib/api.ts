@@ -64,3 +64,7 @@ export function submitOutlineFeedback(courseId: string, feedback: string): Promi
 export function approveOutline(courseId: string): Promise<Course> {
   return request<Course>(`/courses/${courseId}/approve-outline`, { method: 'POST' });
 }
+
+export function generateModuleActivities(moduleId: string): Promise<Course> {
+  return request<Course>(`/modules/${moduleId}/generate-activities`, { method: 'POST' });
+}

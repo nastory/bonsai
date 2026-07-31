@@ -42,6 +42,8 @@ def update_settings() -> Response:
         settings.thumbnail_generation_enabled = body["thumbnailGenerationEnabled"]
     if "embeddingModel" in body:
         settings.embedding_model = body["embeddingModel"]
+    if "tavilyApiKey" in body:
+        settings.tavily_api_key = body["tavilyApiKey"]
 
     model_provider = body.get("modelProvider", {})
     if "tier" in model_provider:

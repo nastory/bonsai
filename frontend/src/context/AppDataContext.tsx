@@ -1,12 +1,19 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Course, UserSettings, UserSettingsPatch } from '../types/course';
-import { fetchCourses, fetchSettings, updateSettings, completeActivity as apiCompleteActivity } from '../lib/api';
+import {
+  fetchCourses,
+  fetchSettings,
+  updateSettings,
+  completeActivity as apiCompleteActivity,
+  generateModuleActivities as apiGenerateModuleActivities,
+} from '../lib/api';
 
 const DEFAULT_USER: UserSettings = {
   name: 'Learner',
   feedbackTone: 'encouraging',
   thumbnailGenerationEnabled: true,
   modelProvider: { tier: 'hosted', hasApiKey: false },
+  hasTavilyApiKey: false,
 };
 
 interface AppDataContextValue {
@@ -15,6 +22,7 @@ interface AppDataContextValue {
   loading: boolean;
   getCourse: (courseId: string) => Course | undefined;
   completeActivity: (activityId: string) => void;
+  generateModuleActivities: (moduleId: string) => void;
   updateUserSettings: (patch: UserSettingsPatch) => void;
   refreshCourses: () => Promise<void>;
 }
@@ -51,6 +59,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       .catch((err) => console.error('Failed to complete activity:', err));
   };
 
+  // Called when the learner reaches an in-progress module that has no
+  // activities yet: generates them server-side, then replaces the course
+  // in local state with the server's authoritative result.
+  const generateModuleActivities = (moduleId: string) => {
+    apiGenerateModuleActivities(moduleId)
+      .then((updatedCourse) => {
+        setCourses((prev) => prev.map((c) => (c.id === updatedCourse.id ? updatedCourse : c)));
+      })
+      .catch((err) => console.error('Failed to generate module activities:', err));
+  };
+
   const updateUserSettingsRemote = (patch: UserSettingsPatch) => {
     updateSettings(patch)
       .then((updated) => setUser(updated))
@@ -68,6 +87,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       loading,
       getCourse,
       completeActivity,
+      generateModuleActivities,
       updateUserSettings: updateUserSettingsRemote,
       refreshCourses,
     }),
