@@ -51,7 +51,7 @@ def test_list_courses_returns_seeded_courses(client, db) -> None:
     body = response.get_json()
     assert len(body) == 1
     assert body[0]["id"] == "gpu-programming"
-    assert body[0]["progressPercent"] == 0.0
+    assert body[0]["progressPercent"] == 0
 
 
 def test_get_course_returns_full_detail(client, db) -> None:

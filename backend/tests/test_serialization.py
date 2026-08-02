@@ -95,7 +95,7 @@ def test_course_to_dict_includes_computed_progress_and_nested_modules() -> None:
     result = course.to_dict()
 
     assert result["thumbnailUrl"] == "from-emerald-950 to-emerald-800"
-    assert result["progressPercent"] == 100.0
+    assert result["progressPercent"] == 100
     assert result["sourceMaterials"] == []
     assert len(result["modules"]) == 1
 

@@ -56,7 +56,7 @@ class Course(db.Model):
     )
 
     @property
-    def progress_percent(self) -> float:
+    def progress_percent(self) -> int:
         """Percent of the (estimated) full course completed so far.
 
         Computed from activity status rather than stored, so it can never
@@ -67,16 +67,17 @@ class Course(db.Model):
         module generated *so far* happens to be finished.
 
         Returns:
-            0.0 if the course has no modules yet, otherwise the estimated
-            percentage of the whole course completed.
+            0 if the course has no modules yet, otherwise the estimated
+            percentage of the whole course completed, rounded to the
+            nearest whole number.
         """
         activities = [a for m in self.modules for a in m.activities]
         ungenerated_modules = sum(1 for m in self.modules if not m.activities)
         total = len(activities) + ungenerated_modules * ASSUMED_ACTIVITIES_PER_UNGENERATED_MODULE
         if total == 0:
-            return 0.0
+            return 0
         completed = sum(1 for a in activities if a.status == "completed")
-        return round(100 * completed / total, 1)
+        return round(100 * completed / total)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the shape frontend/src/types/course.ts's Course expects."""

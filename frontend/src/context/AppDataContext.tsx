@@ -22,7 +22,7 @@ interface AppDataContextValue {
   loading: boolean;
   getCourse: (courseId: string) => Course | undefined;
   completeActivity: (activityId: string) => void;
-  generateModuleActivities: (moduleId: string) => void;
+  generateModuleActivities: (moduleId: string) => Promise<void>;
   updateUserSettings: (patch: UserSettingsPatch) => void;
   refreshCourses: () => Promise<void>;
 }
@@ -62,12 +62,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Called when the learner reaches an in-progress module that has no
   // activities yet: generates them server-side, then replaces the course
   // in local state with the server's authoritative result.
+  // Rethrows after logging (unlike the other mutators here) so callers that
+  // need to react to failure - e.g. CourseHome showing a retry option
+  // instead of an indefinite "Generating..." - can do so.
   const generateModuleActivities = (moduleId: string) => {
-    apiGenerateModuleActivities(moduleId)
+    return apiGenerateModuleActivities(moduleId)
       .then((updatedCourse) => {
         setCourses((prev) => prev.map((c) => (c.id === updatedCourse.id ? updatedCourse : c)));
       })
-      .catch((err) => console.error('Failed to generate module activities:', err));
+      .catch((err) => {
+        console.error('Failed to generate module activities:', err);
+        throw err;
+      });
   };
 
   const updateUserSettingsRemote = (patch: UserSettingsPatch) => {

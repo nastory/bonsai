@@ -24,14 +24,21 @@ export function CourseHome() {
   // this ref so a re-render (or the course refreshing mid-generation)
   // doesn't fire a duplicate request.
   const triggeredModuleIds = useRef<Set<string>>(new Set());
+  const [failedModuleId, setFailedModuleId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!course) return;
     const pendingModule = course.modules.find((m) => m.status === 'in_progress' && m.activities.length === 0);
     if (pendingModule && !triggeredModuleIds.current.has(pendingModule.id)) {
       triggeredModuleIds.current.add(pendingModule.id);
-      generateModuleActivities(pendingModule.id);
+      generateModuleActivities(pendingModule.id).catch(() => setFailedModuleId(pendingModule.id));
     }
   }, [course, generateModuleActivities]);
+
+  const retryGeneration = (moduleId: string) => {
+    setFailedModuleId(null);
+    generateModuleActivities(moduleId).catch(() => setFailedModuleId(moduleId));
+  };
 
   if (!course) {
     return (
@@ -101,35 +108,47 @@ export function CourseHome() {
 
           return (
             <div key={module.id} className="rounded-xl border border-bonsai-border bg-white">
-              <button
-                onClick={() => hasContent && toggleModule(module.id)}
-                disabled={!hasContent}
-                className="flex w-full items-center justify-between px-4 py-3 text-left disabled:cursor-default"
-              >
-                <div>
-                  <p
-                    className={cn(
-                      'text-sm font-medium',
-                      module.status === 'locked' ? 'text-bonsai-text-muted' : 'text-bonsai-text',
-                    )}
-                  >
-                    {module.title}
-                  </p>
-                  {!hasContent && (
-                    <p className="mt-0.5 text-xs text-bonsai-text-muted">
-                      {module.status === 'locked'
-                        ? 'Not generated yet. Unlocks when you reach it.'
-                        : 'Generating...'}
-                    </p>
-                  )}
-                </div>
-                {hasContent &&
-                  (isExpanded ? (
+              {hasContent ? (
+                <button
+                  onClick={() => toggleModule(module.id)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left"
+                >
+                  <p className="text-sm font-medium text-bonsai-text">{module.title}</p>
+                  {isExpanded ? (
                     <ChevronDown className="h-4 w-4 shrink-0 text-bonsai-text-muted" />
                   ) : (
                     <ChevronRight className="h-4 w-4 shrink-0 text-bonsai-text-muted" />
-                  ))}
-              </button>
+                  )}
+                </button>
+              ) : (
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p
+                      className={cn(
+                        'text-sm font-medium',
+                        module.status === 'locked' ? 'text-bonsai-text-muted' : 'text-bonsai-text',
+                      )}
+                    >
+                      {module.title}
+                    </p>
+                    <p className="mt-0.5 text-xs text-bonsai-text-muted">
+                      {module.status === 'locked'
+                        ? 'Not generated yet. Unlocks when you reach it.'
+                        : failedModuleId === module.id
+                          ? 'Generation failed.'
+                          : 'Generating...'}
+                    </p>
+                  </div>
+                  {failedModuleId === module.id && (
+                    <button
+                      onClick={() => retryGeneration(module.id)}
+                      className="text-xs font-medium text-bonsai-green hover:underline"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
 
               {hasContent && isExpanded && (
                 <ul className="space-y-1 border-t border-bonsai-border px-4 py-3">

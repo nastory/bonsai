@@ -8,6 +8,9 @@ export function AppShell() {
       <main className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
+      <p className="pointer-events-none fixed bottom-2 right-3 text-xs text-gray-400">
+        Nigel Story &copy; {new Date().getFullYear()}
+      </p>
     </div>
   );
 }

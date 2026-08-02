@@ -71,7 +71,7 @@ def test_course_progress_percent_computed_from_activity_statuses(db) -> None:
     db.session.commit()
 
     fetched = db.session.get(Course, "c1")
-    assert fetched.progress_percent == 50.0
+    assert fetched.progress_percent == 50
 
 
 def test_course_progress_percent_counts_ungenerated_modules_as_estimated_remaining_work(db) -> None:
@@ -102,7 +102,7 @@ def test_course_progress_percent_counts_ungenerated_modules_as_estimated_remaini
 
     fetched = db.session.get(Course, "c1")
     # 1 completed out of (1 generated + 5 estimated for the ungenerated module) = 1/6
-    assert fetched.progress_percent == round(100 * 1 / 6, 1)
+    assert fetched.progress_percent == round(100 * 1 / 6)
 
 
 def test_deleting_course_cascades_to_modules_and_activities(db) -> None:
