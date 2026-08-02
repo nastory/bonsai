@@ -14,15 +14,14 @@ def _seed_course_with_two_modules(db) -> None:
     )
     module1.activities = [
         Activity(id="a1", position=0, activity_type="reading", title="A1", status="available"),
-        Activity(id="a2", position=1, activity_type="reading", title="A2", status="locked"),
+        Activity(id="a2", position=1, activity_type="reading", title="A2", status="available"),
     ]
     module2 = Module(
         id="m2", position=1, title="M2", description="d",
         estimated_timeline="1 week", status="locked", learning_outcomes=[],
     )
-    module2.activities = [
-        Activity(id="b1", position=0, activity_type="reading", title="B1", status="locked"),
-    ]
+    # No activities: a locked module hasn't been generated yet at all,
+    # unlike an activity within an already-generated module.
     course.modules = [module1, module2]
     db.session.add(course)
     db.session.commit()
@@ -45,7 +44,9 @@ def test_complete_activity_marks_it_completed(client, db) -> None:
     assert _find_activity(response.get_json(), "a1")["status"] == "completed"
 
 
-def test_complete_activity_unlocks_next_activity_in_module(client, db) -> None:
+def test_completing_activity_does_not_lock_or_change_sibling_activities(client, db) -> None:
+    # All of a module's activities are generated together and available from
+    # the start; completing one must not cascade a lock/unlock onto others.
     _seed_course_with_two_modules(db)
 
     response = client.post("/api/activities/a1/complete")

@@ -45,13 +45,16 @@ def test_generate_module_activities_raises_for_unknown_module(db) -> None:
 
 
 def test_generate_module_activities_populates_activities(db) -> None:
+    # All activities in a module are generated together in one call, so
+    # none of them should come out locked: locking only applies to a whole
+    # module that hasn't been generated yet, never to individual activities
+    # within one that has.
     module = _make_module()
 
     result = generate_module_activities(module.id)
 
     assert len(result.activities) >= 1
-    assert result.activities[0].status == "available"
-    assert all(a.status == "locked" for a in result.activities[1:])
+    assert all(a.status == "available" for a in result.activities)
 
 
 def test_generate_module_activities_writes_content_path_for_each_activity(db) -> None:

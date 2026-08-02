@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Check, Circle, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Check, Circle } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
 import { findCurrentActivity, activityPath } from '../lib/courseHelpers';
 import { Card } from '../components/ui/Card';
@@ -133,31 +133,21 @@ export function CourseHome() {
 
               {hasContent && isExpanded && (
                 <ul className="space-y-1 border-t border-bonsai-border px-4 py-3">
-                  {module.activities.map((activity) => {
-                    const isLocked = activity.status === 'locked';
-                    const row = (
-                      <div
-                        className={cn(
-                          'flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm',
-                          !isLocked && 'text-bonsai-text hover:bg-bonsai-cream',
-                          isLocked && 'text-bonsai-text-muted',
-                        )}
+                  {module.activities.map((activity) => (
+                    <li key={activity.id}>
+                      <Link
+                        to={activityPath(course.id, module.id, activity.id)}
+                        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-bonsai-text hover:bg-bonsai-cream"
                       >
-                        {activity.status === 'completed' && (
+                        {activity.status === 'completed' ? (
                           <Check className="h-3.5 w-3.5 shrink-0 text-bonsai-green" />
+                        ) : (
+                          <Circle className="h-3.5 w-3.5 shrink-0" />
                         )}
-                        {activity.status === 'available' && <Circle className="h-3.5 w-3.5 shrink-0" />}
-                        {activity.status === 'locked' && <Lock className="h-3.5 w-3.5 shrink-0" />}
                         <span>{activity.title}</span>
-                      </div>
-                    );
-
-                    return (
-                      <li key={activity.id}>
-                        {isLocked ? row : <Link to={activityPath(course.id, module.id, activity.id)}>{row}</Link>}
-                      </li>
-                    );
-                  })}
+                      </Link>
+                    </li>
+                  ))}
                 </ul>
               )}
             </div>

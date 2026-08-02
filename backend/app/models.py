@@ -10,6 +10,12 @@ from typing import Any
 
 from app.extensions import db
 
+# Used only to estimate a course's overall progress before every module has
+# been generated (see Course.progress_percent): a module with no activities
+# yet hasn't been generated, so its real activity count is unknown. This is
+# a rough stand-in, not a prediction the app is meant to hit exactly.
+ASSUMED_ACTIVITIES_PER_UNGENERATED_MODULE = 5
+
 
 class Course(db.Model):
     """A course the learner is taking, made up of an ordered list of modules."""
@@ -51,20 +57,26 @@ class Course(db.Model):
 
     @property
     def progress_percent(self) -> float:
-        """Percent of activities completed across all modules.
+        """Percent of the (estimated) full course completed so far.
 
         Computed from activity status rather than stored, so it can never
-        drift out of sync with the activities it's derived from.
+        drift out of sync with the activities it's derived from. A module
+        that hasn't been generated yet (no activities) contributes
+        ASSUMED_ACTIVITIES_PER_UNGENERATED_MODULE to the denominator instead
+        of 0, so a course doesn't read as "100% done" just because every
+        module generated *so far* happens to be finished.
 
         Returns:
-            0.0 if the course has no activities yet, otherwise the
-            percentage of activities with status "completed".
+            0.0 if the course has no modules yet, otherwise the estimated
+            percentage of the whole course completed.
         """
         activities = [a for m in self.modules for a in m.activities]
-        if not activities:
+        ungenerated_modules = sum(1 for m in self.modules if not m.activities)
+        total = len(activities) + ungenerated_modules * ASSUMED_ACTIVITIES_PER_UNGENERATED_MODULE
+        if total == 0:
             return 0.0
         completed = sum(1 for a in activities if a.status == "completed")
-        return round(100 * completed / len(activities), 1)
+        return round(100 * completed / total, 1)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the shape frontend/src/types/course.ts's Course expects."""

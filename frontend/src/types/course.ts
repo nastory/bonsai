@@ -7,7 +7,11 @@ export type ActivityType =
   | 'discussion'
   | 'assessment';
 
-export type ActivityStatus = 'locked' | 'available' | 'completed';
+// No 'locked': a module's activities are always generated together (see
+// module_generation.py), so an activity either doesn't exist yet (the
+// module itself is locked/ungenerated) or is fully reachable. Only
+// ModuleStatus needs a 'locked' state.
+export type ActivityStatus = 'available' | 'completed';
 
 export type ModuleStatus = 'locked' | 'in_progress' | 'completed';
 

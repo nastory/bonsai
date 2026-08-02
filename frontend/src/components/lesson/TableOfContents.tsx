@@ -1,4 +1,4 @@
-import { X, Check, Lock, Circle } from 'lucide-react';
+import { X, Check, Circle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Course } from '../../types/course';
 import { cn } from '../ui/cn';
@@ -46,33 +46,24 @@ export function TableOfContents({ course, currentActivityId, onClose }: TableOfC
                 <ul className="mt-2 space-y-1">
                   {module.activities.map((activity) => {
                     const isCurrent = activity.id === currentActivityId;
-                    const isLocked = activity.status === 'locked';
-
-                    const row = (
-                      <div
-                        className={cn(
-                          'flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm',
-                          isCurrent && 'bg-bonsai-cream font-medium text-bonsai-green',
-                          !isCurrent && !isLocked && 'text-bonsai-text hover:bg-bonsai-cream',
-                          isLocked && 'text-bonsai-text-muted',
-                        )}
-                      >
-                        {activity.status === 'completed' && <Check className="h-3.5 w-3.5 shrink-0 text-bonsai-green" />}
-                        {activity.status === 'available' && <Circle className="h-3.5 w-3.5 shrink-0" />}
-                        {activity.status === 'locked' && <Lock className="h-3.5 w-3.5 shrink-0" />}
-                        <span>{activity.title}</span>
-                      </div>
-                    );
 
                     return (
                       <li key={activity.id}>
-                        {isLocked ? (
-                          row
-                        ) : (
-                          <Link to={activityPath(course.id, module.id, activity.id)} onClick={onClose}>
-                            {row}
-                          </Link>
-                        )}
+                        <Link
+                          to={activityPath(course.id, module.id, activity.id)}
+                          onClick={onClose}
+                          className={cn(
+                            'flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm',
+                            isCurrent ? 'bg-bonsai-cream font-medium text-bonsai-green' : 'text-bonsai-text hover:bg-bonsai-cream',
+                          )}
+                        >
+                          {activity.status === 'completed' ? (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-bonsai-green" />
+                          ) : (
+                            <Circle className="h-3.5 w-3.5 shrink-0" />
+                          )}
+                          <span>{activity.title}</span>
+                        </Link>
                       </li>
                     );
                   })}

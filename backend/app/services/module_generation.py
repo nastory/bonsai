@@ -46,13 +46,17 @@ def generate_module_activities(module_id: str) -> Module:
         return module
 
     generated = _generate_activities_content(module)
+    # All available, never locked: a module's activities are generated
+    # together in this one call, so there's no such thing as "generated but
+    # not reachable yet" for an activity the way there is for a module that
+    # hasn't been generated at all.
     activities = [
         Activity(
             id=str(uuid4()),
             position=i,
             activity_type=a.type,
             title=a.title,
-            status="available" if i == 0 else "locked",
+            status="available",
             estimated_minutes=a.estimatedMinutes,
         )
         for i, a in enumerate(generated.activities)

@@ -65,13 +65,44 @@ def test_course_progress_percent_computed_from_activity_statuses(db) -> None:
         learning_outcomes=[],
     )
     a1 = Activity(id="a1", module_id="m1", position=0, activity_type="reading", title="A1", status="completed")
-    a2 = Activity(id="a2", module_id="m1", position=1, activity_type="reading", title="A2", status="locked")
+    a2 = Activity(id="a2", module_id="m1", position=1, activity_type="reading", title="A2", status="available")
 
     db.session.add_all([course, module, a1, a2])
     db.session.commit()
 
     fetched = db.session.get(Course, "c1")
     assert fetched.progress_percent == 50.0
+
+
+def test_course_progress_percent_counts_ungenerated_modules_as_estimated_remaining_work(db) -> None:
+    # Otherwise a course reads as "100% done" the moment its one generated
+    # module is completed, even though the rest of the course hasn't been
+    # built yet. An ungenerated module (no activities) counts as an assumed
+    # 5 activities of remaining work, so progress doesn't hit 100% until
+    # every module is both generated and completed.
+    course = Course(
+        id="c1", title="Test Course", description="d", prerequisites=[],
+        estimated_timeline="2 weeks", thumbnail_url="x",
+    )
+    module_1 = Module(
+        id="m1", course_id="c1", position=0, title="Module 1", description="d",
+        estimated_timeline="1 week", status="completed", learning_outcomes=[],
+    )
+    module_1.activities = [
+        Activity(id="a1", position=0, activity_type="reading", title="A1", status="completed"),
+    ]
+    module_2 = Module(
+        id="m2", course_id="c1", position=1, title="Module 2", description="d",
+        estimated_timeline="1 week", status="locked", learning_outcomes=[],
+    )
+    # No activities: not generated yet.
+
+    db.session.add_all([course, module_1, module_2])
+    db.session.commit()
+
+    fetched = db.session.get(Course, "c1")
+    # 1 completed out of (1 generated + 5 estimated for the ungenerated module) = 1/6
+    assert fetched.progress_percent == round(100 * 1 / 6, 1)
 
 
 def test_deleting_course_cascades_to_modules_and_activities(db) -> None:

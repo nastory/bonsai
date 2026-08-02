@@ -83,6 +83,11 @@ def _gpu_programming_course() -> Course:
             "Explain why register and shared memory usage affects occupancy",
         ],
     )
+    # Only these 3: a module's activities are generated together in one call
+    # (see module_generation.py), so there's no such thing as some of a
+    # generated module's activities existing while others are still locked
+    # pending completion order. This module simply hasn't had the rest of
+    # its activities generated yet.
     module_2.activities = [
         Activity(id="m2-a1", position=0, activity_type="reading", title="GPU Memory Overview",
                   status="completed", estimated_minutes=12),
@@ -90,12 +95,6 @@ def _gpu_programming_course() -> Course:
                   status="completed", estimated_minutes=15),
         Activity(id="m2-a3", position=2, activity_type="reading", title="Memory Hierarchy",
                   status="available", estimated_minutes=20),
-        Activity(id="m2-a4", position=3, activity_type="reading", title="Threads & Warps",
-                  status="locked", estimated_minutes=20),
-        Activity(id="m2-a5", position=4, activity_type="project", title="Shared Memory in Practice",
-                  status="locked", estimated_minutes=30),
-        Activity(id="m2-a6", position=5, activity_type="assessment", title="Module 2 Assessment",
-                  status="locked", estimated_minutes=10),
     ]
 
     module_3 = Module(
