@@ -49,6 +49,21 @@ def test_validate_llm_json_raises_for_wrong_type() -> None:
         validate_llm_json('{"done": "not a boolean", "question": null}', InterviewStepSchema)
 
 
+def test_validate_llm_json_raises_for_empty_question_when_not_done() -> None:
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json('{"done": false, "question": ""}', InterviewStepSchema)
+
+
+def test_validate_llm_json_raises_for_null_question_when_not_done() -> None:
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json('{"done": false, "question": null}', InterviewStepSchema)
+
+
+def test_validate_llm_json_raises_for_whitespace_only_question_when_not_done() -> None:
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json('{"done": false, "question": "   "}', InterviewStepSchema)
+
+
 def test_validate_llm_json_accepts_well_formed_course_outline() -> None:
     raw = """
     {

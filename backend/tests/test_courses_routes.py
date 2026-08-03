@@ -70,3 +70,19 @@ def test_get_course_returns_404_for_unknown_course(client, db) -> None:
     response = client.get("/api/courses/does-not-exist")
 
     assert response.status_code == 404
+
+
+def test_delete_course_removes_it(client, db) -> None:
+    _seed_course(db)
+
+    response = client.delete("/api/courses/gpu-programming")
+
+    assert response.status_code == 200
+    assert client.get("/api/courses/gpu-programming").status_code == 404
+    assert client.get("/api/courses").get_json() == []
+
+
+def test_delete_course_returns_404_for_unknown_course(client, db) -> None:
+    response = client.delete("/api/courses/does-not-exist")
+
+    assert response.status_code == 404

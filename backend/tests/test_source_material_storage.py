@@ -6,7 +6,11 @@ return exactly what was saved, with an instance-relative (not absolute) path.
 
 from pathlib import Path
 
-from app.services.source_material_storage import load_source_material_text, save_source_material_text
+from app.services.source_material_storage import (
+    delete_source_material_text,
+    load_source_material_text,
+    save_source_material_text,
+)
 
 
 def test_save_source_material_text_returns_a_path(app) -> None:
@@ -41,3 +45,19 @@ def test_load_source_material_text_accepts_an_absolute_path(app, tmp_path) -> No
         loaded = load_source_material_text(str(text_file))
 
     assert loaded == "legacy extracted text"
+
+
+def test_delete_source_material_text_removes_the_file(app) -> None:
+    with app.app_context():
+        path = save_source_material_text("src-3", "text to delete")
+        absolute_path = Path(app.instance_path) / path
+        assert absolute_path.exists()
+
+        delete_source_material_text(path)
+
+        assert not absolute_path.exists()
+
+
+def test_delete_source_material_text_is_a_no_op_for_a_missing_file(app) -> None:
+    with app.app_context():
+        delete_source_material_text("source_material_text/does-not-exist.txt")

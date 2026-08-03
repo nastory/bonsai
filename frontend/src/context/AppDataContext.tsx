@@ -5,6 +5,7 @@ import {
   fetchSettings,
   updateSettings,
   completeActivity as apiCompleteActivity,
+  deleteCourse as apiDeleteCourse,
   generateModuleActivities as apiGenerateModuleActivities,
 } from '../lib/api';
 
@@ -23,6 +24,7 @@ interface AppDataContextValue {
   loading: boolean;
   getCourse: (courseId: string) => Course | undefined;
   completeActivity: (activityId: string) => void;
+  deleteCourse: (courseId: string) => Promise<void>;
   generateModuleActivities: (moduleId: string) => Promise<void>;
   updateUserSettings: (patch: UserSettingsPatch) => Promise<void>;
   refreshCourses: () => Promise<void>;
@@ -58,6 +60,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setCourses((prev) => prev.map((c) => (c.id === updatedCourse.id ? updatedCourse : c)));
       })
       .catch((err) => console.error('Failed to complete activity:', err));
+  };
+
+  // Rethrows after logging (same reasoning as generateModuleActivities
+  // below) so MyCourses can show an error instead of the course silently
+  // staying in the list with no sign the delete failed.
+  const deleteCourse = (courseId: string) => {
+    return apiDeleteCourse(courseId)
+      .then(() => {
+        setCourses((prev) => prev.filter((c) => c.id !== courseId));
+      })
+      .catch((err) => {
+        console.error('Failed to delete course:', err);
+        throw err;
+      });
   };
 
   // Called when the learner reaches an in-progress module that has no
@@ -101,6 +117,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       loading,
       getCourse,
       completeActivity,
+      deleteCourse,
       generateModuleActivities,
       updateUserSettings: updateUserSettingsRemote,
       refreshCourses,

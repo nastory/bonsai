@@ -19,8 +19,14 @@ def resolve_model_config() -> dict:
 
     Reads the single UserSettings row to decide, based on the configured
     tier, which model to call and how to reach it: a hosted provider
-    (with its API key) or a BYOM endpoint (LiteLLM's "ollama/<model>"
-    convention, with an api_base).
+    (with its API key) or a BYOM endpoint (LiteLLM's "ollama_chat/<model>"
+    convention, with an api_base). Deliberately "ollama_chat/", not the
+    plain "ollama/" prefix: the latter routes through Ollama's older
+    /api/generate endpoint, which (in the installed litellm version) breaks
+    when combined with llm.complete()'s JSON response_format — confirmed
+    against a real local Ollama instance. "ollama_chat/" uses /api/chat,
+    the endpoint actually meant for chat-shaped messages, and works
+    correctly with JSON mode.
 
     Returns:
         A dict with a "model" key, plus "api_key" (hosted) or "api_base"
@@ -32,7 +38,7 @@ def resolve_model_config() -> dict:
     if settings.model_provider_tier == "byom":
         model_name = settings.model_provider_byom_model or DEFAULT_BYOM_MODEL
         endpoint = settings.model_provider_byom_endpoint or DEFAULT_BYOM_ENDPOINT
-        return {"model": f"ollama/{model_name}", "api_base": endpoint}
+        return {"model": f"ollama_chat/{model_name}", "api_base": endpoint}
 
     hosted_provider = settings.model_provider_hosted_provider or "anthropic"
     default_model = DEFAULT_HOSTED_MODELS.get(hosted_provider, DEFAULT_HOSTED_MODELS["anthropic"])

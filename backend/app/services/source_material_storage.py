@@ -45,3 +45,18 @@ def load_source_material_text(text_path: str) -> str:
     if not path.is_absolute():
         path = Path(current_app.instance_path) / path
     return path.read_text()
+
+
+def delete_source_material_text(text_path: str) -> None:
+    """Delete a source material's extracted text from disk, e.g. when its course is deleted.
+
+    Args:
+        text_path: The path stored in SourceMaterial.text_path, relative to
+            instance_path (or absolute, per load_source_material_text's note).
+            Missing files are ignored rather than erroring, since this is
+            cleanup, not a load a caller depends on succeeding.
+    """
+    path = Path(text_path)
+    if not path.is_absolute():
+        path = Path(current_app.instance_path) / path
+    path.unlink(missing_ok=True)

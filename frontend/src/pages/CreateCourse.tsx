@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Paperclip, X } from 'lucide-react';
+import { ArrowRight, Loader2, Paperclip, X } from 'lucide-react';
 import { ChatBubble } from '../components/chat/ChatBubble';
+import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { cn } from '../components/ui/cn';
 import { ApiError, startCourse, submitInterviewAnswer, generateOutline } from '../lib/api';
@@ -74,7 +75,7 @@ export function CreateCourse() {
       setMessages((prev) => {
         const base = hasFiles ? prev.slice(0, -1) : prev;
         const text = step.done
-          ? "Perfect, that's everything I need. Drafting your course outline..."
+          ? "I have all the info I need. I'll draft a course outline for you now."
           : step.question ?? '';
         return [...base, { from: 'bonsai', text }];
       });
@@ -176,6 +177,18 @@ export function CreateCourse() {
           />
         ))}
       </div>
+
+      {generating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+          <Card className="flex w-full max-w-sm flex-col items-center gap-3 py-8 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-bonsai-green" />
+            <p className="font-semibold text-bonsai-text">Drafting your course outline...</p>
+            <p className="text-sm text-bonsai-text-muted">
+              This can take a little while, especially with a local model.
+            </p>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

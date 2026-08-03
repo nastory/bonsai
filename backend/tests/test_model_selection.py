@@ -45,7 +45,7 @@ def test_resolve_model_config_uses_byom_endpoint_and_model(db) -> None:
 
     config = resolve_model_config()
 
-    assert config["model"] == "ollama/llama3"
+    assert config["model"] == "ollama_chat/llama3"
     assert config["api_base"] == "http://localhost:11434"
     assert "api_key" not in config
 
@@ -56,5 +56,5 @@ def test_resolve_model_config_byom_falls_back_to_default_endpoint_and_model(db) 
 
     config = resolve_model_config()
 
-    assert config["model"] == "ollama/llama3"
+    assert config["model"] == "ollama_chat/llama3"
     assert config["api_base"] == "http://localhost:11434"

@@ -46,6 +46,10 @@ export function fetchCourse(courseId: string): Promise<Course> {
   return request<Course>(`/courses/${courseId}`);
 }
 
+export function deleteCourse(courseId: string): Promise<void> {
+  return request<void>(`/courses/${courseId}`, { method: 'DELETE' });
+}
+
 export function startCourse(message: string, files: File[] = []): Promise<InterviewStep> {
   const formData = new FormData();
   formData.append('message', message);

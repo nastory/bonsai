@@ -1,4 +1,4 @@
-<h1><img src="frontend/src/assets/logo.svg" width="28" height="28" alt="Bonsai logo" align="center" /> Bonsai</h1>
+<h1><img src="frontend/src/assets/logo.svg" width="28" height="28" alt="Bonsai logo" align="center" /> Bonsai Learning</h1>
 
 An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
 
@@ -17,6 +17,13 @@ Recently, I've been on a bonsai kick on TikTok. The meditative patience that goe
 
 - Docker and Docker Compose (easiest way to run both servers together), **or**
 - Node.js 20+ and npm (for `frontend/`) and Python 3.10+ (for `backend/`), to run them natively
+- If using BYOM (bring-your-own-model) with a local Ollama instance: **Ollama >=0.5 is required, not
+  just recommended**. Generation constrains every LLM response to an exact JSON schema (see
+  `app/services/llm.py`'s `complete()`), which needs Ollama's schema-constrained decoding — added in
+  0.5. Older versions don't degrade gracefully: they reject the request outright (`400 Bad Request`,
+  `"cannot unmarshal object into Go struct field ChatRequest.format of type string"`), since `format`
+  used to only accept the literal string `"json"`, not a schema object. Check with `ollama --version`;
+  upgrade with the same install script used to install it (`curl -fsSL https://ollama.com/install.sh | sh`).
 
 ## Project structure
 

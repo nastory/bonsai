@@ -129,7 +129,7 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
     for i, planned in enumerate(module.activity_plan):
         turn = _activity_turn_message(i, module.activity_plan, planned, search_results.get(i, []))
         messages.append({"role": "user", "content": turn})
-        raw = complete(messages=messages, **model_config)
+        raw = complete(messages=messages, schema=GeneratedActivitySchema, **model_config)
         generated.append(validate_llm_json(raw, GeneratedActivitySchema))
         messages.append({"role": "assistant", "content": raw})
 
@@ -193,7 +193,7 @@ def _generate_digest_content(module: Module) -> ModuleDigestSchema:
         {"role": "system", "content": load_prompt("module_digest")},
         {"role": "user", "content": _digest_data_message(module)},
     ]
-    raw = complete(messages=messages, **resolve_model_config())
+    raw = complete(messages=messages, schema=ModuleDigestSchema, **resolve_model_config())
     return validate_llm_json(raw, ModuleDigestSchema)
 
 

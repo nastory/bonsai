@@ -54,7 +54,7 @@ def plan_activity_searches(module: Module, model_config: dict) -> ModuleSearchPl
             {"role": "system", "content": load_prompt("module_search_terms")},
             {"role": "user", "content": _search_planning_data_message(module)},
         ]
-        raw = complete(messages=messages, **model_config)
+        raw = complete(messages=messages, schema=ModuleSearchPlanSchema, **model_config)
         plan = validate_llm_json(raw, ModuleSearchPlanSchema)
 
     expected_indices = set(range(len(module.activity_plan)))

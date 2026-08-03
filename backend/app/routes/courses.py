@@ -1,7 +1,6 @@
-"""Read-only routes for course data.
+"""Routes for course data: listing/fetching, plus deletion.
 
-There's no course-creation endpoint yet; courses only exist here once a
-later slice wires up the real LLM-driven creation flow.
+Creation (interview -> outline -> approve) lives in course_creation.py.
 """
 
 from flask import Blueprint, abort, jsonify
@@ -9,6 +8,7 @@ from flask.wrappers import Response
 
 from app.extensions import db
 from app.models import Course
+from app.services.course_generation import CourseNotFoundError, delete_course
 
 courses_bp = Blueprint("courses", __name__)
 
@@ -38,3 +38,20 @@ def get_course(course_id: str) -> Response:
     if course is None:
         abort(404, description=f"No course with id '{course_id}'")
     return jsonify(course.to_dict())
+
+
+@courses_bp.delete("/api/courses/<course_id>")
+def delete_course_route(course_id: str) -> Response:
+    """Permanently delete a course, including its modules, activities, and stored content.
+
+    Args:
+        course_id: The course's id.
+
+    Returns:
+        An empty JSON object on success.
+    """
+    try:
+        delete_course(course_id)
+    except CourseNotFoundError:
+        abort(404, description=f"No course with id '{course_id}'")
+    return jsonify({})

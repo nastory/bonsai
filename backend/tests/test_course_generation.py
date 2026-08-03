@@ -12,11 +12,12 @@ import pytest
 from werkzeug.datastructures import FileStorage
 
 from app.extensions import db
-from app.models import ConversationMessage
+from app.models import ConversationMessage, Course
 from app.services.course_generation import (
     MAX_INTERVIEW_QUESTIONS,
     CourseNotFoundError,
     approve_outline,
+    delete_course,
     generate_outline,
     start_course,
     submit_interview_answer,
@@ -327,3 +328,51 @@ def test_approve_outline_compacts_and_stores_course_context(db) -> None:
     assert approved.context_summary["summary"]
     assert approved.context_summary["learnerProfile"]
     assert approved.context_summary["keyDecisions"] == []
+
+
+def test_delete_course_raises_for_unknown_course(db) -> None:
+    with pytest.raises(CourseNotFoundError):
+        delete_course("does-not-exist")
+
+
+def test_delete_course_removes_the_course_and_its_children(app, db) -> None:
+    from pathlib import Path
+
+    from app.models import Activity, Module, SourceMaterial
+    from app.services.content_storage import save_activity_content
+    from app.services.source_material_storage import save_source_material_text
+
+    course = Course(
+        id="c1", title="GPU Programming", description="d", prerequisites=[],
+        estimated_timeline="1 week", thumbnail_url="x", stage="active",
+    )
+    module = Module(
+        id="m1", course_id="c1", position=0, title="Basics", description="d",
+        estimated_timeline="1 week", status="in_progress", learning_outcomes=[],
+    )
+    content_path = save_activity_content("a1", {"body": "content"})
+    activity = Activity(
+        id="a1", module_id="m1", position=0, activity_type="reading", title="Intro",
+        status="available", estimated_minutes=10, content_path=content_path,
+    )
+    text_path = save_source_material_text("src-1", "extracted text")
+    material = SourceMaterial(id="src-1", course_id="c1", file_name="paper.txt", text_path=text_path)
+    module.activities = [activity]
+    course.modules = [module]
+    course.source_materials = [material]
+    db.session.add(course)
+    db.session.commit()
+
+    content_absolute = Path(app.instance_path) / content_path
+    text_absolute = Path(app.instance_path) / text_path
+    assert content_absolute.exists()
+    assert text_absolute.exists()
+
+    delete_course("c1")
+
+    assert db.session.get(Course, "c1") is None
+    assert db.session.get(Module, "m1") is None
+    assert db.session.get(Activity, "a1") is None
+    assert db.session.get(SourceMaterial, "src-1") is None
+    assert not content_absolute.exists()
+    assert not text_absolute.exists()

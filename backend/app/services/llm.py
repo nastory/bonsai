@@ -6,21 +6,33 @@ LLM_TEST_MODE flag and the pytest suite have a single seam to intercept.
 
 import litellm
 from flask import current_app
+from pydantic import BaseModel
 
 
 def complete(
     messages: list[dict[str, str]],
     model: str,
+    schema: type[BaseModel] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
 ) -> str:
-    """Get a chat completion's text content.
+    """Get a chat completion's text content, optionally constrained to match a schema.
 
     Args:
         messages: Chat messages in the standard role/content shape.
         model: The LiteLLM-recognized model identifier to call (e.g.
             "claude-3-5-sonnet-20241022" for a hosted model, or
-            "ollama/llama3" for a local one).
+            "ollama_chat/llama3" for a local one).
+        schema: The Pydantic schema the response must match, when the caller
+            is going to feed the result into validate_llm_json() against
+            this same schema (true of every call site except
+            retrieval_agent.py's final free-text nudge, which wants plain
+            text, not JSON). Without a real schema constraint, weaker/local
+            models occasionally answer conversationally instead of with
+            JSON at all (confirmed against real Ollama/llama3), or with
+            syntactically valid JSON in the wrong shape (also confirmed).
+            "Valid JSON, any shape" alone (a plain ``{"type": "json_object"}``
+            mode) doesn't catch the second failure; a real schema does.
         api_key: The provider API key, for hosted models. Omitted entirely
             (not passed as None) when not given, so BYOM calls that need
             no key don't send a meaningless one.
@@ -38,6 +50,33 @@ def complete(
         kwargs["api_key"] = api_key
     if api_base:
         kwargs["api_base"] = api_base
+
+    if schema is not None:
+        json_schema = schema.model_json_schema()
+        if model.startswith("ollama"):
+            # Ollama's own schema-constrained decoding: a JSON schema passed
+            # as the native "format" field (requires Ollama >=0.5 — see
+            # README). Not routed through response_format: LiteLLM's Ollama
+            # translation only forwards response_format's plain
+            # {"type": "json_object"} case (unconstrained "valid JSON, any
+            # shape"), not a real json_schema.
+            kwargs["format"] = json_schema
+        else:
+            # OpenAI: native Structured Outputs. Anthropic: LiteLLM
+            # translates this same shape into a forced tool-call constrained
+            # to the schema, transparently unwrapping it back into a normal
+            # JSON string content (see litellm/llms/anthropic/chat/transformation.py's
+            # json_mode handling) so this call site doesn't need to know the
+            # difference. Deliberately not requesting OpenAI's "strict": true:
+            # several of this codebase's schemas have optional fields, which
+            # strict mode's stricter shape rules (every field required, no
+            # plain-optional) aren't guaranteed to satisfy — unverified
+            # without a live OpenAI key in this environment, so left off
+            # rather than risk breaking hosted generation silently.
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": schema.__name__, "schema": json_schema},
+            }
 
     response = litellm.completion(**kwargs)
     return response.choices[0].message.content

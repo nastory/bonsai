@@ -6,8 +6,13 @@ called and its response is unwrapped to plain text.
 """
 
 from flask import Flask
+from pydantic import BaseModel
 
 from app.services.llm import complete, complete_with_tools
+
+
+class _DummySchema(BaseModel):
+    value: str
 
 
 class _FakeMessage:
@@ -30,6 +35,7 @@ def test_complete_returns_canned_response_in_test_mode(app: Flask) -> None:
         result = complete(
             messages=[{"role": "user", "content": "Tell me about GPUs"}],
             model="claude-3-5-sonnet-20241022",
+            schema=_DummySchema,
         )
 
     assert isinstance(result, str)
@@ -43,7 +49,7 @@ def test_complete_does_not_call_litellm_in_test_mode(app: Flask, monkeypatch) ->
     monkeypatch.setattr("app.services.llm.litellm.completion", fail_if_called)
 
     with app.app_context():
-        complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022")
+        complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022", schema=_DummySchema)
 
 
 def test_complete_calls_litellm_when_not_in_test_mode(monkeypatch) -> None:
@@ -52,7 +58,7 @@ def test_complete_calls_litellm_when_not_in_test_mode(monkeypatch) -> None:
     real_app = create_app(test=False)
     captured: dict = {}
 
-    def fake_completion(model, messages):
+    def fake_completion(model, messages, **kwargs):
         captured["model"] = model
         captured["messages"] = messages
         return _FakeResponse("a real response")
@@ -60,7 +66,9 @@ def test_complete_calls_litellm_when_not_in_test_mode(monkeypatch) -> None:
     monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
     with real_app.app_context():
-        result = complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022")
+        result = complete(
+            messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022", schema=_DummySchema
+        )
 
     assert result == "a real response"
     assert captured["model"] == "claude-3-5-sonnet-20241022"
@@ -82,14 +90,56 @@ def test_complete_forwards_api_key_and_api_base_when_given(monkeypatch) -> None:
     with real_app.app_context():
         complete(
             messages=[{"role": "user", "content": "Hi"}],
-            model="ollama/llama3",
+            model="ollama_chat/llama3",
+            schema=_DummySchema,
             api_key="sk-test",
             api_base="http://localhost:11434",
         )
 
-    assert captured["model"] == "ollama/llama3"
+    assert captured["model"] == "ollama_chat/llama3"
     assert captured["api_key"] == "sk-test"
     assert captured["api_base"] == "http://localhost:11434"
+
+
+def test_complete_requests_schema_constrained_json_for_hosted_models(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _FakeResponse("ok")
+
+    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+    with real_app.app_context():
+        complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022", schema=_DummySchema)
+
+    assert captured["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "_DummySchema", "schema": _DummySchema.model_json_schema()},
+    }
+    assert "format" not in captured
+
+
+def test_complete_requests_schema_constrained_json_for_ollama_models(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _FakeResponse("ok")
+
+    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+    with real_app.app_context():
+        complete(messages=[{"role": "user", "content": "Hi"}], model="ollama_chat/llama3", schema=_DummySchema)
+
+    assert captured["format"] == _DummySchema.model_json_schema()
+    assert "response_format" not in captured
 
 
 class _FakeToolCall:
@@ -156,13 +206,13 @@ def test_complete_with_tools_forwards_tools_and_model_config(monkeypatch) -> Non
     with real_app.app_context():
         result = complete_with_tools(
             messages=[{"role": "user", "content": "Hi"}],
-            model="ollama/llama3",
+            model="ollama_chat/llama3",
             tools=tools,
             api_key="sk-test",
             api_base="http://localhost:11434",
         )
 
-    assert captured["model"] == "ollama/llama3"
+    assert captured["model"] == "ollama_chat/llama3"
     assert captured["tools"] == tools
     assert captured["api_key"] == "sk-test"
     assert captured["api_base"] == "http://localhost:11434"
@@ -182,7 +232,7 @@ def test_complete_omits_api_key_and_api_base_when_not_given(monkeypatch) -> None
     monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
     with real_app.app_context():
-        complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022")
+        complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022", schema=_DummySchema)
 
     assert "api_key" not in captured
     assert "api_base" not in captured

@@ -1,4 +1,4 @@
-"""Course-creation generation: the interview -> outline -> approve flow.
+"""Course lifecycle: the interview -> outline -> approve creation flow, and deletion.
 
 Each course carries its own ConversationMessage history from the moment
 the interview starts, through outline revisions, and (eventually) into
@@ -33,7 +33,8 @@ from app.services.llm_schemas import (
 )
 from app.services.model_selection import resolve_model_config
 from app.services.prompts import load_prompt
-from app.services.source_material_storage import save_source_material_text
+from app.services.content_storage import delete_activity_content
+from app.services.source_material_storage import delete_source_material_text, save_source_material_text
 
 MAX_INTERVIEW_QUESTIONS = 10
 
@@ -189,6 +190,35 @@ def approve_outline(course_id: str) -> Course:
     return course
 
 
+def delete_course(course_id: str) -> None:
+    """Permanently delete a course and everything associated with it.
+
+    Deletes on-disk content first (each activity's generated content, each
+    source material's extracted text): SQLAlchemy's cascade="all, delete-orphan"
+    on Course.modules/source_materials/conversation cleans up the DB rows,
+    but has no idea these files on disk exist, so they'd otherwise be
+    orphaned. Order doesn't matter for correctness (the DB delete doesn't
+    depend on the files being gone first), but doing it first means a
+    mid-delete crash leaves an intact course rather than a DB row pointing
+    at already-deleted files.
+
+    Args:
+        course_id: The course's id.
+
+    Raises:
+        CourseNotFoundError: If no course matches course_id.
+    """
+    course = _get_course_or_raise(course_id)
+    for module in course.modules:
+        for activity in module.activities:
+            if activity.content_path:
+                delete_activity_content(activity.content_path)
+    for material in course.source_materials:
+        delete_source_material_text(material.text_path)
+    db.session.delete(course)
+    db.session.commit()
+
+
 def _get_course_or_raise(course_id: str) -> Course:
     course = db.session.get(Course, course_id)
     if course is None:
@@ -278,7 +308,7 @@ def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepS
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question"}
     )
-    raw = complete(messages=messages, **resolve_model_config())
+    raw = complete(messages=messages, schema=InterviewStepSchema, **resolve_model_config())
     return validate_llm_json(raw, InterviewStepSchema)
 
 
@@ -290,7 +320,7 @@ def _generate_outline_content(course: Course, revision_feedback: str | None) -> 
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question", "outline_revision_request", "outline_presented"}
     )
-    raw = complete(messages=messages, **resolve_model_config())
+    raw = complete(messages=messages, schema=CourseOutlineSchema, **resolve_model_config())
     return validate_llm_json(raw, CourseOutlineSchema)
 
 

@@ -52,3 +52,18 @@ def load_activity_content(content_path: str) -> dict:
     if not path.is_absolute():
         path = Path(current_app.instance_path) / path
     return json.loads(path.read_text())
+
+
+def delete_activity_content(content_path: str) -> None:
+    """Delete an activity's generated content from disk, e.g. when its course is deleted.
+
+    Args:
+        content_path: The path stored in Activity.content_path, relative to
+            instance_path (or absolute, per load_activity_content's note).
+            Missing files are ignored rather than erroring, since this is
+            cleanup, not a load a caller depends on succeeding.
+    """
+    path = Path(content_path)
+    if not path.is_absolute():
+        path = Path(current_app.instance_path) / path
+    path.unlink(missing_ok=True)

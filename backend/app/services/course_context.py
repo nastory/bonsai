@@ -34,7 +34,7 @@ def compact_course_context(course: Course) -> CourseContextSchema:
         course,
         {"interview_answer", "interview_question", "outline_revision_request", "outline_presented", "outline_approved"},
     )
-    raw = complete(messages=messages, **resolve_model_config())
+    raw = complete(messages=messages, schema=CourseContextSchema, **resolve_model_config())
     return validate_llm_json(raw, CourseContextSchema)
 
 
@@ -80,7 +80,8 @@ def summarize_document_for_interview(text: str, model_config: dict) -> str:
         return "[MOCK] Summary of the document."
 
     prompt = load_prompt("document_summary")
-    raw = complete(messages=[{"role": "system", "content": prompt}, {"role": "user", "content": text}], **model_config)
+    messages = [{"role": "system", "content": prompt}, {"role": "user", "content": text}]
+    raw = complete(messages=messages, schema=DocumentSummarySchema, **model_config)
     return validate_llm_json(raw, DocumentSummarySchema).summary
 
 

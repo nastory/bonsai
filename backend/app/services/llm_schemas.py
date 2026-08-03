@@ -14,7 +14,7 @@ to mirror the external JSON contract, not as general Python domain models.
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 class LLMOutputValidationError(Exception):
@@ -26,6 +26,21 @@ class InterviewStepSchema(BaseModel):
 
     done: bool
     question: str | None = None
+
+    @model_validator(mode="after")
+    def _question_required_when_not_done(self) -> "InterviewStepSchema":
+        """Reject a response that's structurally valid but practically useless.
+
+        `{"done": false, "question": ""}` (or `null`) passes the plain field
+        types above, but leaves the learner staring at a chat with nothing to
+        answer — the interview silently stalls instead of failing clearly.
+        Confirmed happening against real Ollama/llama3. Raising here turns it
+        into the same clear 502 every other malformed response already gets,
+        instead of a confusing dead end.
+        """
+        if not self.done and not (self.question and self.question.strip()):
+            raise ValueError('"question" must be a non-empty string when "done" is false')
+        return self
 
 
 class PlannedActivitySchema(BaseModel):

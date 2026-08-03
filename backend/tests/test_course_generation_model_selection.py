@@ -40,6 +40,6 @@ def test_start_course_calls_litellm_with_byom_settings(real_llm_app, monkeypatch
 
     start_course("I want to learn GPU programming")
 
-    assert captured["model"] == "ollama/llama3"
+    assert captured["model"] == "ollama_chat/llama3"
     assert captured["api_base"] == "http://localhost:11434"
     assert "api_key" not in captured

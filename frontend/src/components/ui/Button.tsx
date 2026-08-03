@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { cn } from './cn';
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost';
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -12,6 +12,8 @@ const variantClasses: Record<ButtonVariant, string> = {
     'bg-bonsai-green text-white hover:bg-bonsai-green-hover disabled:opacity-50',
   secondary:
     'bg-white text-bonsai-text border border-bonsai-border hover:bg-bonsai-cream disabled:opacity-50',
+  outline:
+    'bg-white text-bonsai-green border border-bonsai-green hover:bg-bonsai-cream disabled:opacity-50',
   ghost: 'bg-transparent text-bonsai-text hover:bg-bonsai-cream disabled:opacity-50',
 };
 
