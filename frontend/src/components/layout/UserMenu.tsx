@@ -54,7 +54,7 @@ export function UserMenu() {
 
   const saveName = () => {
     const trimmed = nameDraft.trim();
-    if (trimmed) updateUserSettings({ name: trimmed });
+    if (trimmed) updateUserSettings({ name: trimmed }).catch(() => {});
     setEditingName(false);
     setOpen(false);
   };

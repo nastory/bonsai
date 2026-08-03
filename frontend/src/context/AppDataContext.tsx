@@ -23,7 +23,7 @@ interface AppDataContextValue {
   getCourse: (courseId: string) => Course | undefined;
   completeActivity: (activityId: string) => void;
   generateModuleActivities: (moduleId: string) => Promise<void>;
-  updateUserSettings: (patch: UserSettingsPatch) => void;
+  updateUserSettings: (patch: UserSettingsPatch) => Promise<void>;
   refreshCourses: () => Promise<void>;
 }
 
@@ -76,10 +76,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       });
   };
 
+  // Rethrows after logging (same reasoning as generateModuleActivities
+  // above) so callers - e.g. Settings showing a save confirmation or error
+  // for a write-only API key field - can react to failure instead of the
+  // field just silently clearing with no sign of whether it actually saved.
   const updateUserSettingsRemote = (patch: UserSettingsPatch) => {
-    updateSettings(patch)
+    return updateSettings(patch)
       .then((updated) => setUser(updated))
-      .catch((err) => console.error('Failed to update settings:', err));
+      .catch((err) => {
+        console.error('Failed to update settings:', err);
+        throw err;
+      });
   };
 
   // Called after course creation finishes, so a newly-approved course shows

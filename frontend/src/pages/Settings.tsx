@@ -1,9 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
+import { Check, X } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
+import type { UserSettingsPatch } from '../types/course';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Toggle } from '../components/ui/Toggle';
 import { cn } from '../components/ui/cn';
+
+type SaveStatus = 'idle' | 'saved' | 'error';
+
+function KeyInput({
+  status,
+  className,
+  ...props
+}: ComponentProps<typeof Input> & { status: SaveStatus }) {
+  return (
+    <div className={cn('relative', className)}>
+      <Input className={cn(status !== 'idle' && 'pr-10')} {...props} />
+      {status === 'saved' && (
+        <Check className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-600" />
+      )}
+      {status === 'error' && (
+        <X className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-600" />
+      )}
+    </div>
+  );
+}
 
 function SegmentedControl<T extends string>({
   value,
@@ -38,10 +60,21 @@ export function Settings() {
   const { user, updateUserSettings } = useAppData();
   const { modelProvider } = user;
 
+  // Fire-and-forget updates (toggles, segmented controls, model name
+  // fields): AppDataContext already logs failures, and these fields show
+  // their own current value, so there's nothing further to confirm.
+  const save = (patch: UserSettingsPatch) => {
+    updateUserSettings(patch).catch(() => {});
+  };
+
   // The backend never sends the real API key back, so this draft always
-  // starts empty; it exists only to capture a *new* key to save.
+  // starts empty; it exists only to capture a *new* key to save. Since
+  // there's no persisted value to show afterward, these two fields need
+  // their own save-status feedback so it's clear whether it actually saved.
   const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [apiKeyStatus, setApiKeyStatus] = useState<SaveStatus>('idle');
   const [tavilyKeyDraft, setTavilyKeyDraft] = useState('');
+  const [tavilyKeyStatus, setTavilyKeyStatus] = useState<SaveStatus>('idle');
 
   // byomEndpoint/byomModel aren't secret, so it's fine to prefill and re-sync
   // when the fetched settings change, but still save on blur rather than per keystroke.
@@ -66,40 +99,46 @@ export function Settings() {
   }, [user.embeddingModel]);
 
   const saveApiKeyIfChanged = () => {
-    if (apiKeyDraft.trim()) {
-      updateUserSettings({ modelProvider: { apiKey: apiKeyDraft.trim() } });
-      setApiKeyDraft('');
-    }
+    if (!apiKeyDraft.trim()) return;
+    updateUserSettings({ modelProvider: { apiKey: apiKeyDraft.trim() } })
+      .then(() => {
+        setApiKeyDraft('');
+        setApiKeyStatus('saved');
+      })
+      .catch(() => setApiKeyStatus('error'));
   };
 
   const saveTavilyKeyIfChanged = () => {
-    if (tavilyKeyDraft.trim()) {
-      updateUserSettings({ tavilyApiKey: tavilyKeyDraft.trim() });
-      setTavilyKeyDraft('');
-    }
+    if (!tavilyKeyDraft.trim()) return;
+    updateUserSettings({ tavilyApiKey: tavilyKeyDraft.trim() })
+      .then(() => {
+        setTavilyKeyDraft('');
+        setTavilyKeyStatus('saved');
+      })
+      .catch(() => setTavilyKeyStatus('error'));
   };
 
   const saveByomEndpointIfChanged = () => {
     if (byomEndpointDraft !== (modelProvider.byomEndpoint ?? '')) {
-      updateUserSettings({ modelProvider: { byomEndpoint: byomEndpointDraft } });
+      save({ modelProvider: { byomEndpoint: byomEndpointDraft } });
     }
   };
 
   const saveByomModelIfChanged = () => {
     if (byomModelDraft !== (modelProvider.byomModel ?? '')) {
-      updateUserSettings({ modelProvider: { byomModel: byomModelDraft } });
+      save({ modelProvider: { byomModel: byomModelDraft } });
     }
   };
 
   const saveHostedModelIfChanged = () => {
     if (hostedModelDraft !== (modelProvider.hostedModel ?? '')) {
-      updateUserSettings({ modelProvider: { hostedModel: hostedModelDraft } });
+      save({ modelProvider: { hostedModel: hostedModelDraft } });
     }
   };
 
   const saveEmbeddingModelIfChanged = () => {
     if (embeddingModelDraft !== (user.embeddingModel ?? '')) {
-      updateUserSettings({ embeddingModel: embeddingModelDraft });
+      save({ embeddingModel: embeddingModelDraft });
     }
   };
 
@@ -120,7 +159,7 @@ export function Settings() {
               { value: 'hosted', label: 'Hosted' },
               { value: 'byom', label: 'Bring Your Own Model' },
             ]}
-            onChange={(tier) => updateUserSettings({ modelProvider: { tier } })}
+            onChange={(tier) => save({ modelProvider: { tier } })}
           />
         </div>
 
@@ -132,7 +171,7 @@ export function Settings() {
                 { value: 'anthropic', label: 'Anthropic' },
                 { value: 'openai', label: 'OpenAI' },
               ]}
-              onChange={(hostedProvider) => updateUserSettings({ modelProvider: { hostedProvider } })}
+              onChange={(hostedProvider) => save({ modelProvider: { hostedProvider } })}
             />
             <Input
               placeholder={
@@ -144,15 +183,34 @@ export function Settings() {
               onChange={(e) => setHostedModelDraft(e.target.value)}
               onBlur={saveHostedModelIfChanged}
             />
-            <Input
+            <KeyInput
+              status={apiKeyStatus}
               type="password"
               placeholder={modelProvider.hasApiKey ? 'Enter a new key to replace the current one' : 'API key'}
               value={apiKeyDraft}
-              onChange={(e) => setApiKeyDraft(e.target.value)}
+              onChange={(e) => {
+                setApiKeyDraft(e.target.value);
+                setApiKeyStatus('idle');
+              }}
               onBlur={saveApiKeyIfChanged}
             />
-            <p className="text-xs text-bonsai-text-muted">
-              {modelProvider.hasApiKey ? 'A key is configured. ' : 'No key set yet. '}
+            <p
+              className={cn(
+                'text-xs',
+                apiKeyStatus === 'saved'
+                  ? 'text-green-600'
+                  : apiKeyStatus === 'error'
+                    ? 'text-red-600'
+                    : 'text-bonsai-text-muted',
+              )}
+            >
+              {apiKeyStatus === 'saved'
+                ? 'Saved. '
+                : apiKeyStatus === 'error'
+                  ? 'Failed to save — try again. '
+                  : modelProvider.hasApiKey
+                    ? 'A key is configured. '
+                    : 'No key set yet. '}
               Reliable tool-use support on this path means citations and retrieval work as designed.
             </p>
           </div>
@@ -198,19 +256,37 @@ export function Settings() {
         <p className="font-semibold text-bonsai-text">Retrieval (Tavily)</p>
         <p className="mt-1 text-sm text-bonsai-text-muted">
           Powers the web search used to ground and cite course content. This is a separate key from whichever
-          LLM provider you use above, needed regardless of hosted vs. Bring Your Own Model. Doesn't do
-          anything yet: the retrieval agent isn't built.
+          LLM provider you use above, needed regardless of hosted vs. Bring Your Own Model.
         </p>
-        <Input
+        <KeyInput
+          status={tavilyKeyStatus}
           className="mt-3"
           type="password"
           placeholder={user.hasTavilyApiKey ? 'Enter a new key to replace the current one' : 'Tavily API key'}
           value={tavilyKeyDraft}
-          onChange={(e) => setTavilyKeyDraft(e.target.value)}
+          onChange={(e) => {
+            setTavilyKeyDraft(e.target.value);
+            setTavilyKeyStatus('idle');
+          }}
           onBlur={saveTavilyKeyIfChanged}
         />
-        <p className="mt-2 text-xs text-bonsai-text-muted">
-          {user.hasTavilyApiKey ? 'A key is configured.' : 'No key set yet.'}
+        <p
+          className={cn(
+            'mt-2 text-xs',
+            tavilyKeyStatus === 'saved'
+              ? 'text-green-600'
+              : tavilyKeyStatus === 'error'
+                ? 'text-red-600'
+                : 'text-bonsai-text-muted',
+          )}
+        >
+          {tavilyKeyStatus === 'saved'
+            ? 'Saved.'
+            : tavilyKeyStatus === 'error'
+              ? 'Failed to save — try again.'
+              : user.hasTavilyApiKey
+                ? 'A key is configured.'
+                : 'No key set yet.'}
         </p>
       </Card>
 
@@ -224,7 +300,7 @@ export function Settings() {
           </div>
           <Toggle
             checked={user.thumbnailGenerationEnabled}
-            onChange={(thumbnailGenerationEnabled) => updateUserSettings({ thumbnailGenerationEnabled })}
+            onChange={(thumbnailGenerationEnabled) => save({ thumbnailGenerationEnabled })}
           />
         </div>
       </Card>
@@ -241,7 +317,7 @@ export function Settings() {
               { value: 'encouraging', label: 'Encouraging' },
               { value: 'straightforward', label: 'Straightforward' },
             ]}
-            onChange={(feedbackTone) => updateUserSettings({ feedbackTone })}
+            onChange={(feedbackTone) => save({ feedbackTone })}
           />
         </div>
       </Card>
