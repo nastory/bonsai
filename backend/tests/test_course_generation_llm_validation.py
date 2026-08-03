@@ -8,7 +8,7 @@ the database is still an isolated in-memory instance.
 
 import pytest
 
-from app.services.course_generation import generate_outline, start_course
+from app.services.course_generation import approve_outline, generate_outline, start_course
 from app.services.llm_schemas import LLMOutputValidationError
 
 
@@ -63,3 +63,25 @@ def test_generate_outline_raises_when_model_omits_modules(real_llm_app, monkeypa
 
     with pytest.raises(LLMOutputValidationError):
         generate_outline(step.course.id)
+
+
+def test_approve_outline_raises_when_compaction_response_is_malformed(real_llm_app, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.llm.litellm.completion",
+        lambda **kwargs: _FakeResponse('{"done": false, "question": "a question"}'),
+    )
+    step = start_course("I want to learn GPU programming")
+
+    monkeypatch.setattr(
+        "app.services.llm.litellm.completion",
+        lambda **kwargs: _FakeResponse(
+            '{"title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week", "modules": []}'
+        ),
+    )
+    course = generate_outline(step.course.id)
+
+    # Swap in a compaction response that isn't valid JSON.
+    monkeypatch.setattr("app.services.llm.litellm.completion", lambda **kwargs: _FakeResponse("not json at all"))
+
+    with pytest.raises(LLMOutputValidationError):
+        approve_outline(course.id)

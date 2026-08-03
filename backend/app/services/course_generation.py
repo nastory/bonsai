@@ -11,13 +11,29 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from flask import current_app
+from werkzeug.datastructures import FileStorage
 
 from app.extensions import db
-from app.models import Course, ConversationMessage, Module
+from app.models import Course, ConversationMessage, Module, SourceMaterial
+from app.services.course_context import (
+    compact_course_context,
+    conversation_turns,
+    render_source_materials,
+    render_source_material_summaries,
+    summarize_document_for_interview,
+)
+from app.services.document_extraction import extract_text
 from app.services.llm import complete
-from app.services.llm_schemas import CourseModuleSchema, CourseOutlineSchema, InterviewStepSchema, validate_llm_json
+from app.services.llm_schemas import (
+    CourseModuleSchema,
+    CourseOutlineSchema,
+    InterviewStepSchema,
+    PlannedActivitySchema,
+    validate_llm_json,
+)
 from app.services.model_selection import resolve_model_config
 from app.services.prompts import load_prompt
+from app.services.source_material_storage import save_source_material_text
 
 MAX_INTERVIEW_QUESTIONS = 10
 
@@ -35,14 +51,21 @@ class InterviewStep:
     question: str | None
 
 
-def start_course(first_message: str) -> InterviewStep:
+def start_course(first_message: str, files: list[FileStorage] | None = None) -> InterviewStep:
     """Start a new course from the learner's initial description of what they want to learn.
 
     Args:
         first_message: The learner's own words describing what they want to learn.
+        files: Any documents attached alongside the first message. Ingested
+            before the first follow-up question is asked, so that question
+            can already be shaped by the document (see _ingest_source_materials).
 
     Returns:
         The new course (in the 'interview' stage) plus the first follow-up question.
+
+    Raises:
+        DocumentExtractionError: If an attached file can't be parsed. Nothing
+            about this call is persisted in that case (see _ingest_source_materials).
     """
     course = Course(
         id=str(uuid4()),
@@ -53,6 +76,12 @@ def start_course(first_message: str) -> InterviewStep:
         thumbnail_url="from-emerald-950 to-emerald-800",
         stage="interview",
     )
+    # Ingest before anything is added to the session: resolve_model_config()
+    # (called for summarization, if there are files) can trigger its own
+    # commit on first use (UserSettings.get_or_create()), which would
+    # otherwise prematurely persist this course/message if extraction then
+    # failed on a later file.
+    _ingest_source_materials(course, files)
     db.session.add(course)
     _add_message(course.id, "user", "interview_answer", first_message)
 
@@ -61,20 +90,29 @@ def start_course(first_message: str) -> InterviewStep:
     return step
 
 
-def submit_interview_answer(course_id: str, answer: str) -> InterviewStep:
+def submit_interview_answer(
+    course_id: str, answer: str, files: list[FileStorage] | None = None
+) -> InterviewStep:
     """Record an interview answer and ask the next question (or signal readiness).
 
     Args:
         course_id: The course's id.
         answer: The learner's answer to the previous question.
+        files: Any documents attached alongside this answer (a learner can
+            attach a document mid-interview, not just with the first message).
 
     Returns:
         The updated course plus the next question, or done=True if there are enough answers.
 
     Raises:
         CourseNotFoundError: If no course matches course_id.
+        DocumentExtractionError: If an attached file can't be parsed.
     """
     course = _get_course_or_raise(course_id)
+    # Ingest before adding the answer message, for the same reason as
+    # start_course(): a nested commit inside resolve_model_config() shouldn't
+    # prematurely persist it if extraction then fails on a later file.
+    _ingest_source_materials(course, files)
     _add_message(course.id, "user", "interview_answer", answer)
 
     step = _advance_interview(course)
@@ -127,6 +165,10 @@ def submit_outline_feedback(course_id: str, feedback: str) -> Course:
 def approve_outline(course_id: str) -> Course:
     """Approve the current outline: the course becomes active and its first module starts.
 
+    Also compacts the interview + approved outline into a persistent
+    Course.context_summary, so it exists before any module generation call
+    can ever run (see app/services/course_context.py).
+
     Args:
         course_id: The course's id.
 
@@ -141,6 +183,8 @@ def approve_outline(course_id: str) -> Course:
     if course.modules:
         course.modules[0].status = "in_progress"
     _add_message(course.id, "user", "outline_approved", "Approved. Let's start learning.")
+    context = compact_course_context(course)
+    course.context_summary = context.model_dump()
     db.session.commit()
     return course
 
@@ -156,10 +200,42 @@ def _add_message(course_id: str, role: str, kind: str, content: str) -> None:
     db.session.add(ConversationMessage(course_id=course_id, role=role, kind=kind, content=content))
 
 
-def _format_history(course: Course) -> str:
-    return "\n".join(
-        f"{'Learner' if m.role == 'user' else 'Bonsai'}: {m.content}" for m in course.conversation if m.content
-    )
+def _ingest_source_materials(course: Course, files: list[FileStorage] | None) -> None:
+    """Extract, summarize, and persist text for any documents attached to this interview turn.
+
+    Writes each file's extracted text to disk and adds a SourceMaterial row
+    to the session, but doesn't itself commit: if extraction raises partway
+    through (e.g. an unsupported or corrupt file), nothing from this call —
+    not the course, not the interview-answer message, not any file already
+    processed in this same call — ends up persisted, since the caller's
+    single db.session.commit() never runs. resolve_model_config() can
+    trigger its own nested commit on first use (UserSettings.get_or_create()),
+    which is why callers must call this before adding the course/message to
+    the session themselves, not after.
+
+    Args:
+        course: The course these materials belong to.
+        files: The uploaded files, or None/empty if none were attached.
+
+    Raises:
+        DocumentExtractionError: If a file's text can't be extracted.
+    """
+    files = [f for f in (files or []) if f and f.filename]
+    if not files:
+        return
+
+    model_config = resolve_model_config()
+    for file_storage in files:
+        text = extract_text(file_storage.filename, file_storage.read())
+        source_material = SourceMaterial(id=str(uuid4()), file_name=file_storage.filename, text_path="")
+        source_material.text_path = save_source_material_text(source_material.id, text)
+        source_material.interview_summary = summarize_document_for_interview(text, model_config)
+        # Appending to the relationship (not db.session.add() + setting
+        # course_id by hand) is what keeps course.source_materials correct
+        # in-memory for the rest of this call — _advance_interview() reads
+        # it immediately after to shape the next question, before anything
+        # here is committed or reloaded from the database.
+        course.source_materials.append(source_material)
 
 
 def _topic_from_conversation(course: Course) -> str:
@@ -179,21 +255,30 @@ def _advance_interview(course: Course) -> InterviewStep:
 
 
 def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepSchema:
+    if questions_asked >= MAX_INTERVIEW_QUESTIONS:
+        return InterviewStepSchema(done=True, question=None)
+
     if current_app.config.get("LLM_TEST_MODE"):
-        if questions_asked >= MAX_INTERVIEW_QUESTIONS:
-            return InterviewStepSchema(done=True, question=None)
+        if course.source_materials:
+            filenames = ", ".join(m.file_name for m in course.source_materials)
+            return InterviewStepSchema(
+                done=False,
+                question=f"[MOCK] Follow-up question {questions_asked + 1} about {filenames}.",
+            )
         return InterviewStepSchema(
             done=False, question=f"[MOCK] Follow-up question {questions_asked + 1} about your goals."
         )
 
-    prompt = load_prompt(
+    system_prompt = load_prompt(
         "course_interview",
-        topic=_topic_from_conversation(course),
         questions_asked=questions_asked,
         max_questions=MAX_INTERVIEW_QUESTIONS,
-        history=_format_history(course),
+        source_materials=render_source_material_summaries(course),
     )
-    raw = complete(messages=[{"role": "user", "content": prompt}], **resolve_model_config())
+    messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
+        course, {"interview_answer", "interview_question"}
+    )
+    raw = complete(messages=messages, **resolve_model_config())
     return validate_llm_json(raw, InterviewStepSchema)
 
 
@@ -201,9 +286,11 @@ def _generate_outline_content(course: Course, revision_feedback: str | None) -> 
     if current_app.config.get("LLM_TEST_MODE"):
         return _mock_outline(course, revision_feedback)
 
-    revision_section = f"The learner asked for these changes: {revision_feedback}" if revision_feedback else ""
-    prompt = load_prompt("course_outline", history=_format_history(course), revision_section=revision_section)
-    raw = complete(messages=[{"role": "user", "content": prompt}], **resolve_model_config())
+    system_prompt = load_prompt("course_outline", source_materials=render_source_materials(course))
+    messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
+        course, {"interview_answer", "interview_question", "outline_revision_request", "outline_presented"}
+    )
+    raw = complete(messages=messages, **resolve_model_config())
     return validate_llm_json(raw, CourseOutlineSchema)
 
 
@@ -221,18 +308,42 @@ def _mock_outline(course: Course, revision_feedback: str | None) -> CourseOutlin
                 description="Foundational concepts.",
                 estimatedTimeline="1 week",
                 learningOutcomes=["Understand the basics"],
+                plannedActivities=[
+                    PlannedActivitySchema(
+                        type="reading", title="[MOCK] Introduction", plan="[MOCK] Cover the fundamentals."
+                    ),
+                    PlannedActivitySchema(
+                        type="assessment", title="[MOCK] Check Your Understanding", plan="[MOCK] Quiz the basics."
+                    ),
+                ],
             ),
             CourseModuleSchema(
                 title="Going Deeper",
                 description="Building on the fundamentals.",
                 estimatedTimeline="2 weeks",
                 learningOutcomes=["Apply core techniques"],
+                plannedActivities=[
+                    PlannedActivitySchema(
+                        type="reading", title="[MOCK] Core Techniques", plan="[MOCK] Cover the core techniques."
+                    ),
+                    PlannedActivitySchema(
+                        type="discussion", title="[MOCK] Reflect and Discuss", plan="[MOCK] Discuss applications."
+                    ),
+                    PlannedActivitySchema(
+                        type="assessment", title="[MOCK] Check Your Understanding", plan="[MOCK] Quiz the techniques."
+                    ),
+                ],
             ),
             CourseModuleSchema(
                 title="Capstone Project",
                 description="Bring it together with a final project.",
                 estimatedTimeline="1 week",
                 learningOutcomes=["Complete an end-to-end project"],
+                plannedActivities=[
+                    PlannedActivitySchema(
+                        type="project", title="[MOCK] Capstone Project", plan="[MOCK] Build an end-to-end project."
+                    ),
+                ],
             ),
         ],
     )
@@ -253,6 +364,7 @@ def _apply_outline(course: Course, outline: CourseOutlineSchema) -> None:
             estimated_timeline=m.estimatedTimeline,
             status="locked",
             learning_outcomes=m.learningOutcomes,
+            activity_plan=[a.model_dump() for a in m.plannedActivities],
         )
         for i, m in enumerate(outline.modules)
     ]

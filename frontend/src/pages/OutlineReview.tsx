@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -11,10 +11,8 @@ import type { Course } from '../types/course';
 
 export function OutlineReview() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { courseId } = useParams();
   const { refreshCourses } = useAppData();
-  const attachedFiles = (location.state as { files?: File[] } | null)?.files ?? [];
 
   const [course, setCourse] = useState<Course | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -97,17 +95,17 @@ export function OutlineReview() {
           ))}
         </div>
 
-        {attachedFiles.length > 0 && (
+        {course.sourceMaterials && course.sourceMaterials.length > 0 && (
           <div className="mt-6 border-t border-bonsai-border pt-4">
             <p className="text-sm font-medium text-bonsai-text">Source Materials</p>
             <ul className="mt-2 space-y-2">
-              {attachedFiles.map((file, i) => (
+              {course.sourceMaterials.map((material) => (
                 <li
-                  key={`${file.name}-${i}`}
+                  key={material.id}
                   className="flex items-center gap-2 rounded-lg border border-bonsai-border px-3 py-2 text-sm text-bonsai-text"
                 >
                   <FileText className="h-4 w-4 shrink-0 text-bonsai-text-muted" />
-                  {file.name}
+                  {material.fileName}
                 </li>
               ))}
             </ul>

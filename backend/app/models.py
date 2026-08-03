@@ -36,6 +36,12 @@ class Course(db.Model):
     # deeper / branch off" from a completed course (that feature itself is
     # Phase 2 work; this column just makes the lineage representable now).
     parent_course_id = db.Column(db.String, db.ForeignKey("courses.id"), nullable=True)
+    # Condensed interview + approved-outline memory (a CourseContextSchema
+    # dict), generated once at outline approval. Feeds later module
+    # generation and, eventually, branching, without either needing to
+    # replay the full interview conversation. None for courses created
+    # before this existed or that skip the interview flow entirely.
+    context_summary = db.Column(db.JSON, nullable=True)
 
     modules = db.relationship(
         "Module",
@@ -108,6 +114,11 @@ class Module(db.Model):
     estimated_timeline = db.Column(db.String, nullable=False)
     status = db.Column(db.String, nullable=False, default="locked")
     learning_outcomes = db.Column(db.JSON, nullable=False, default=list)
+    # The activities this module will contain, decided at outline time
+    # (a list of {"type", "title", "plan"} dicts, no content yet). Lets a
+    # locked, ungenerated module still have a known shape before any
+    # Activity rows exist for it.
+    activity_plan = db.Column(db.JSON, nullable=False, default=list)
 
     course = db.relationship("Course", back_populates="modules")
     activities = db.relationship(
@@ -176,7 +187,16 @@ class SourceMaterial(db.Model):
     id = db.Column(db.String, primary_key=True)
     course_id = db.Column(db.String, db.ForeignKey("courses.id"), nullable=False)
     file_name = db.Column(db.String, nullable=False)
-    file_path = db.Column(db.String, nullable=False)
+    # Instance-relative path to the *extracted text* (see
+    # app/services/source_material_storage.py), not the original uploaded
+    # file — mirrors Activity.content_path's meaning for activities. The
+    # original file's bytes are never persisted; only what was parsed from it.
+    text_path = db.Column(db.String, nullable=False)
+    # A <=3-sentence summary of the document, generated once at ingestion
+    # time (see app/services/course_context.py's summarize_document_for_interview()),
+    # used to shape interview questions without re-sending the full document
+    # text on every turn. Nullable: only populated once ingestion computes it.
+    interview_summary = db.Column(db.String, nullable=True)
 
     course = db.relationship("Course", back_populates="source_materials")
 
@@ -206,6 +226,10 @@ class ConversationMessage(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     course_id = db.Column(db.String, db.ForeignKey("courses.id"), nullable=False)
+    # Set for messages attributed to a specific module (e.g. a
+    # "module_learning_digest" row) rather than the course as a whole (e.g.
+    # interview/outline messages, which stay course-scoped).
+    module_id = db.Column(db.String, db.ForeignKey("modules.id"), nullable=True)
     role = db.Column(db.String, nullable=False)  # 'user' | 'assistant'
     # Free-form tag (e.g. "interview_answer", "outline_presented",
     # "direction_change_request") for filtering/context-assembly later,
@@ -244,6 +268,9 @@ class UserSettings(db.Model):
     # Separate from the LLM provider entirely, per the PRD: retrieval needs
     # its own Tavily key regardless of hosted vs. BYOM.
     tavily_api_key = db.Column(db.String, nullable=True)
+    # Uses Tavily's "advanced" search_depth (slower, more thorough) instead
+    # of the "basic" default for every module-generation search.
+    deep_search_enabled = db.Column(db.Boolean, nullable=False, default=False)
 
     @classmethod
     def get_or_create(cls) -> "UserSettings":
@@ -280,4 +307,5 @@ class UserSettings(db.Model):
             },
             "embeddingModel": self.embedding_model,
             "hasTavilyApiKey": bool(self.tavily_api_key),
+            "deepSearchEnabled": self.deep_search_enabled,
         }

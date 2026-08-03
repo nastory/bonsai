@@ -4,7 +4,7 @@ import { ArrowRight, Paperclip, X } from 'lucide-react';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { Input } from '../components/ui/Input';
 import { cn } from '../components/ui/cn';
-import { startCourse, submitInterviewAnswer, generateOutline } from '../lib/api';
+import { ApiError, startCourse, submitInterviewAnswer, generateOutline } from '../lib/api';
 
 interface Message {
   from: 'bonsai' | 'user';
@@ -27,6 +27,7 @@ export function CreateCourse() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [sending, setSending] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -47,34 +48,53 @@ export function CreateCourse() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const text = inputValue.trim();
-    if (!text || generating) return;
+    if (!text || generating || sending) return;
 
-    setMessages((prev) => [...prev, { from: 'user', text }]);
+    const filesToSend = attachedFiles;
+    const hasFiles = filesToSend.length > 0;
+
+    setMessages((prev) => [
+      ...prev,
+      { from: 'user', text },
+      ...(hasFiles
+        ? [{ from: 'bonsai', text: filesToSend.length > 1 ? 'Parsing documents...' : 'Parsing document...' } as Message]
+        : []),
+    ]);
     setInputValue('');
+    setSending(true);
 
     try {
-      const step = courseId ? await submitInterviewAnswer(courseId, text) : await startCourse(text);
+      const step = courseId
+        ? await submitInterviewAnswer(courseId, text, filesToSend)
+        : await startCourse(text, filesToSend);
       if (!courseId) setCourseId(step.courseId);
       setQuestionsAnswered((n) => n + 1);
+      setAttachedFiles([]);
+
+      setMessages((prev) => {
+        const base = hasFiles ? prev.slice(0, -1) : prev;
+        const text = step.done
+          ? "Perfect, that's everything I need. Drafting your course outline..."
+          : step.question ?? '';
+        return [...base, { from: 'bonsai', text }];
+      });
 
       if (step.done) {
-        setMessages((prev) => [
-          ...prev,
-          { from: 'bonsai', text: "Perfect, that's everything I need. Drafting your course outline..." },
-        ]);
         setGenerating(true);
         const course = await generateOutline(step.courseId);
-        navigate(`/create/review/${course.id}`, { state: { files: attachedFiles } });
-      } else {
-        setMessages((prev) => [...prev, { from: 'bonsai', text: step.question ?? '' }]);
+        navigate(`/create/review/${course.id}`);
       }
     } catch (err) {
       console.error('Course creation failed:', err);
-      setMessages((prev) => [
-        ...prev,
-        { from: 'bonsai', text: "Something went wrong on my end. Mind trying that again?" },
-      ]);
+      const text =
+        err instanceof ApiError ? err.message : "Something went wrong on my end. Mind trying that again?";
+      setMessages((prev) => {
+        const base = hasFiles ? prev.slice(0, -1) : prev;
+        return [...base, { from: 'bonsai', text }];
+      });
       setGenerating(false);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -113,6 +133,7 @@ export function CreateCourse() {
           ref={fileInputRef}
           type="file"
           multiple
+          accept=".txt,.docx,.pdf"
           className="hidden"
           onChange={(e) => {
             handleFilesSelected(e.target.files);
@@ -122,7 +143,7 @@ export function CreateCourse() {
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          disabled={generating}
+          disabled={generating || sending}
           aria-label="Attach documents"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-bonsai-border text-bonsai-text-muted hover:bg-bonsai-cream disabled:opacity-40"
         >
@@ -132,12 +153,12 @@ export function CreateCourse() {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder="Type your answer..."
-          disabled={generating}
+          disabled={generating || sending}
           autoFocus
         />
         <button
           type="submit"
-          disabled={generating || !inputValue.trim()}
+          disabled={generating || sending || !inputValue.trim()}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bonsai-green text-white disabled:opacity-40"
         >
           <ArrowRight className="h-4 w-4" />

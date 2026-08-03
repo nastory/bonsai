@@ -12,9 +12,14 @@ from app.services.prompts import load_prompt
 
 
 def test_load_prompt_substitutes_variables() -> None:
-    text = load_prompt("course_interview", topic="GPU programming", questions_asked=0, max_questions=10, history="")
+    text = load_prompt(
+        "course_interview",
+        questions_asked=3,
+        max_questions=10,
+        source_materials="",
+    )
 
-    assert "GPU programming" in text
+    assert "3" in text
     assert "${" not in text  # no unfilled placeholders left behind
 
 

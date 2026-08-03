@@ -19,6 +19,6 @@ class _FakeResponse:
 def test_create_course_returns_502_when_llm_output_is_invalid(real_llm_client, monkeypatch) -> None:
     monkeypatch.setattr("app.services.llm.litellm.completion", lambda **kwargs: _FakeResponse("not json at all"))
 
-    response = real_llm_client.post("/api/courses", json={"message": "I want to learn GPU programming"})
+    response = real_llm_client.post("/api/courses", data={"message": "I want to learn GPU programming"})
 
     assert response.status_code == 502

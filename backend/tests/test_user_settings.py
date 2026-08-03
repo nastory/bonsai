@@ -10,6 +10,7 @@ def test_get_or_create_returns_defaults_on_first_call(db) -> None:
     assert settings.feedback_tone == "encouraging"
     assert settings.thumbnail_generation_enabled is True
     assert settings.model_provider_tier == "hosted"
+    assert settings.deep_search_enabled is False
 
 
 def test_get_or_create_returns_the_same_row_on_subsequent_calls(db) -> None:

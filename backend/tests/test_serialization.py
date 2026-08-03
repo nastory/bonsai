@@ -106,7 +106,7 @@ def test_course_to_dict_includes_source_materials() -> None:
         estimated_timeline="1 week", thumbnail_url="x",
     )
     course.source_materials = [
-        SourceMaterial(id="src-1", course_id="c1", file_name="paper.pdf", file_path="/data/paper.pdf"),
+        SourceMaterial(id="src-1", course_id="c1", file_name="paper.pdf", text_path="/data/paper.txt"),
     ]
 
     result = course.to_dict()

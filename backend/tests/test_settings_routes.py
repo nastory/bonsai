@@ -117,3 +117,24 @@ def test_put_settings_partial_update_preserves_tavily_key(client, db) -> None:
     response = client.put("/api/settings", json={"name": "Nigel Story"})
 
     assert response.get_json()["hasTavilyApiKey"] is True
+
+
+def test_get_settings_defaults_deep_search_to_false(client, db) -> None:
+    response = client.get("/api/settings")
+
+    assert response.get_json()["deepSearchEnabled"] is False
+
+
+def test_put_settings_enables_deep_search(client, db) -> None:
+    response = client.put("/api/settings", json={"deepSearchEnabled": True})
+
+    assert response.status_code == 200
+    assert response.get_json()["deepSearchEnabled"] is True
+
+
+def test_put_settings_partial_update_preserves_deep_search_enabled(client, db) -> None:
+    client.put("/api/settings", json={"deepSearchEnabled": True})
+
+    response = client.put("/api/settings", json={"name": "Nigel Story"})
+
+    assert response.get_json()["deepSearchEnabled"] is True

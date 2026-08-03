@@ -62,8 +62,28 @@ def test_web_search_calls_tavily_and_parses_results(monkeypatch) -> None:
         results = web_search("GPU programming", api_key="tvly-real", max_results=3)
 
     assert captured["url"] == "https://api.tavily.com/search"
-    assert captured["json"] == {"api_key": "tvly-real", "query": "GPU programming", "max_results": 3}
+    assert captured["json"] == {
+        "api_key": "tvly-real", "query": "GPU programming", "max_results": 3, "search_depth": "basic",
+    }
     assert results == [{"title": "A GPU Primer", "url": "https://example.com/gpu", "content": "GPUs are..."}]
+
+
+def test_web_search_passes_advanced_search_depth_when_requested(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_post(url, json, timeout):
+        captured["json"] = json
+        return _FakeResponse(200, {"results": []})
+
+    monkeypatch.setattr("app.services.retrieval.requests.post", fake_post)
+
+    with real_app.app_context():
+        web_search("GPU programming", api_key="tvly-real", search_depth="advanced")
+
+    assert captured["json"]["search_depth"] == "advanced"
 
 
 def test_web_search_raises_retrieval_error_on_http_failure(monkeypatch) -> None:

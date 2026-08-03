@@ -14,6 +14,7 @@ const DEFAULT_USER: UserSettings = {
   thumbnailGenerationEnabled: true,
   modelProvider: { tier: 'hosted', hasApiKey: false },
   hasTavilyApiKey: false,
+  deepSearchEnabled: false,
 };
 
 interface AppDataContextValue {

@@ -23,6 +23,7 @@ def _make_module(client, course_id: str = "c1") -> Module:
         estimated_timeline="1 week",
         status="in_progress",
         learning_outcomes=["Understand the basics"],
+        activity_plan=[{"type": "reading", "title": "What Is a GPU?", "plan": "Cover the basics."}],
     )
     course.modules = [module]
     _db.session.add(course)

@@ -1,10 +1,12 @@
-"""Tool-calling loop for retrieval-grounded module generation.
+"""Tool-calling loop for retrieval-grounded generation via a web-search and page-fetch tool.
 
-Per the PRD: module generation gets a web-search tool and a page-fetch
-tool backed by Tavily, and runs an iterative search/fetch/evaluate loop
-rather than a single unevaluated search pass. Tool-use reliability varies
-by model: this loop works as designed for hosted models and is best-effort
-for local/BYOM models, per the PRD's disclosed tradeoff.
+No longer wired into module generation: as of the module-generation rework
+(see docs/course_creation_websearch_flow.md), search is planned and executed
+deterministically up front (see module_retrieval.py) rather than left to a
+model deciding for itself whether/what to search, which also removes the
+BYOM tool-use reliability tradeoff this module used to carry for that path.
+Kept as-is (untested-by-removal, still independently tested) since it may be
+reused for a future in-course Q&A feature.
 """
 
 import json

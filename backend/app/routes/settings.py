@@ -44,6 +44,8 @@ def update_settings() -> Response:
         settings.embedding_model = body["embeddingModel"]
     if "tavilyApiKey" in body:
         settings.tavily_api_key = body["tavilyApiKey"]
+    if "deepSearchEnabled" in body:
+        settings.deep_search_enabled = body["deepSearchEnabled"]
 
     model_provider = body.get("modelProvider", {})
     if "tier" in model_provider:

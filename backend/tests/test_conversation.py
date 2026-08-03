@@ -1,6 +1,6 @@
 """Tests for ConversationMessage and Course's stage/parent_course_id fields."""
 
-from app.models import ConversationMessage, Course
+from app.models import ConversationMessage, Course, Module
 
 
 def _make_course(course_id="c1", **overrides):
@@ -64,6 +64,32 @@ def test_conversation_messages_are_ordered_by_creation(db) -> None:
 
     fetched = db.session.get(Course, "c1")
     assert [m.content for m in fetched.conversation] == ["first", "second"]
+
+
+def test_conversation_message_can_be_attributed_to_a_module(db) -> None:
+    course = _make_course()
+    module = Module(
+        id="m1", course_id="c1", position=0, title="Module 1", description="d",
+        estimated_timeline="1 week", status="in_progress", learning_outcomes=[],
+    )
+    message = ConversationMessage(
+        course_id="c1", module_id="m1", role="assistant", kind="module_learning_digest",
+        content="Covered SIMT execution and warp divergence.",
+    )
+    db.session.add_all([course, module, message])
+    db.session.commit()
+
+    fetched = db.session.get(ConversationMessage, message.id)
+    assert fetched.module_id == "m1"
+
+
+def test_conversation_message_module_id_defaults_to_none(db) -> None:
+    course = _make_course()
+    message = ConversationMessage(course_id="c1", role="user", kind="interview_answer", content="hi")
+    db.session.add_all([course, message])
+    db.session.commit()
+
+    assert db.session.get(ConversationMessage, message.id).module_id is None
 
 
 def test_deleting_course_cascades_to_conversation_messages(db) -> None:

@@ -45,6 +45,60 @@ def test_create_course_with_modules_and_activities(db) -> None:
     assert fetched.modules[0].activities[0].title == "What Is a GPU, Really?"
 
 
+def test_module_activity_plan_defaults_to_empty_list(db) -> None:
+    course = Course(
+        id="c1", title="Test Course", description="d", prerequisites=[],
+        estimated_timeline="1 week", thumbnail_url="x",
+    )
+    module = Module(
+        id="m1", course_id="c1", position=0, title="Module 1", description="d",
+        estimated_timeline="1 week", status="locked", learning_outcomes=[],
+    )
+    db.session.add_all([course, module])
+    db.session.commit()
+
+    assert db.session.get(Module, "m1").activity_plan == []
+
+
+def test_module_activity_plan_stores_planned_activities(db) -> None:
+    course = Course(
+        id="c1", title="Test Course", description="d", prerequisites=[],
+        estimated_timeline="1 week", thumbnail_url="x",
+    )
+    plan = [{"type": "reading", "title": "Intro", "plan": "Cover the basics."}]
+    module = Module(
+        id="m1", course_id="c1", position=0, title="Module 1", description="d",
+        estimated_timeline="1 week", status="locked", learning_outcomes=[], activity_plan=plan,
+    )
+    db.session.add_all([course, module])
+    db.session.commit()
+
+    assert db.session.get(Module, "m1").activity_plan == plan
+
+
+def test_course_context_summary_defaults_to_none(db) -> None:
+    course = Course(
+        id="c1", title="Test Course", description="d", prerequisites=[],
+        estimated_timeline="1 week", thumbnail_url="x",
+    )
+    db.session.add(course)
+    db.session.commit()
+
+    assert db.session.get(Course, "c1").context_summary is None
+
+
+def test_course_context_summary_stores_compacted_memory(db) -> None:
+    summary = {"summary": "A course on GPU programming.", "learnerProfile": "Comfortable with Python.", "keyDecisions": []}
+    course = Course(
+        id="c1", title="Test Course", description="d", prerequisites=[],
+        estimated_timeline="1 week", thumbnail_url="x", context_summary=summary,
+    )
+    db.session.add(course)
+    db.session.commit()
+
+    assert db.session.get(Course, "c1").context_summary == summary
+
+
 def test_course_progress_percent_computed_from_activity_statuses(db) -> None:
     course = Course(
         id="c1",
@@ -149,7 +203,7 @@ def test_source_material_belongs_to_a_course(db) -> None:
         id="src-1",
         course_id="gpu-programming",
         file_name="Efficient-Memory-Coalescing-in-CUDA-Kernels.pdf",
-        file_path="/data/source_materials/src-1.pdf",
+        text_path="/data/source_material_text/src-1.txt",
     )
 
     db.session.add_all([course, material])
@@ -165,7 +219,7 @@ def test_deleting_course_cascades_to_source_materials(db) -> None:
         id="c1", title="Test Course", description="d", prerequisites=[],
         estimated_timeline="1 week", thumbnail_url="x",
     )
-    material = SourceMaterial(id="src-1", course_id="c1", file_name="paper.pdf", file_path="/data/paper.pdf")
+    material = SourceMaterial(id="src-1", course_id="c1", file_name="paper.pdf", text_path="/data/paper.txt")
 
     db.session.add_all([course, material])
     db.session.commit()

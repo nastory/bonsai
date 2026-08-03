@@ -1,9 +1,12 @@
-"""Tests for module generation's use of the retrieval agent.
+"""Tests for module generation's use of search planning + retrieval.
 
-When the learner has a Tavily API key configured, module generation should
-route through the search/fetch/evaluate agent loop instead of a single
-plain completion. Without one, it should fall back to plain generation
-(covered by test_module_generation_llm_validation.py, which never sets a key).
+Search is now planned and executed deterministically before any activity
+content is written (see module_retrieval.py), rather than left to a model
+deciding for itself whether/what to search. When the learner has a Tavily
+key configured, retrieved results should reach the activity-generation
+prompt; without one, generation should proceed with no search results
+(malformed-response handling for both stages is covered separately by
+test_module_generation_llm_validation.py).
 """
 
 from app.extensions import db as _db
@@ -45,6 +48,7 @@ def _make_module() -> Module:
         estimated_timeline="1 week",
         status="in_progress",
         learning_outcomes=["Understand the basics"],
+        activity_plan=[{"type": "reading", "title": "Intro", "plan": "Cover the basics."}],
     )
     course.modules = [module]
     _db.session.add(course)
@@ -52,7 +56,21 @@ def _make_module() -> Module:
     return module
 
 
-def test_generate_module_activities_uses_retrieval_agent_when_tavily_key_configured(
+def _mock_completion(captured_prompts: list) -> callable:
+    canned = [
+        '{"activities": [{"activityIndex": 0, "terms": ["GPU basics"]}]}',
+        '{"type": "reading", "title": "Intro", "estimatedMinutes": 10, "body": "b"}',
+        '{"digest": "Covered the basics."}',
+    ]
+
+    def fake_completion(**kwargs):
+        captured_prompts.append(kwargs["messages"][-1]["content"])
+        return _FakeResponse(canned[len(captured_prompts) - 1])
+
+    return fake_completion
+
+
+def test_generate_module_activities_passes_retrieved_results_to_activity_generation(
     real_llm_app, monkeypatch
 ) -> None:
     with real_llm_app.app_context():
@@ -61,44 +79,56 @@ def test_generate_module_activities_uses_retrieval_agent_when_tavily_key_configu
         _db.session.commit()
         module = _make_module()
 
-        captured: dict = {}
-
-        def fake_run_agent(messages, model_config, tavily_api_key):
-            captured["messages"] = messages
-            captured["model_config"] = model_config
-            captured["tavily_api_key"] = tavily_api_key
-            return (
-                '{"activities": [{"type": "reading", "title": "T", "estimatedMinutes": 10, "body": "b", '
-                '"citations": [{"label": "A Source", "url": "https://example.com"}]}]}'
-            )
-
-        monkeypatch.setattr("app.services.module_generation.run_agent", fake_run_agent)
         monkeypatch.setattr(
-            "app.services.llm.litellm.completion",
-            lambda **kwargs: (_ for _ in ()).throw(AssertionError("plain completion should not be called")),
+            "app.services.module_retrieval.web_search",
+            lambda query, api_key, search_depth="basic": [
+                {"title": "A GPU Primer", "url": "https://example.com/gpu-primer", "content": "GPUs are..."}
+            ],
         )
+        captured_prompts: list = []
+        monkeypatch.setattr("app.services.llm.litellm.completion", _mock_completion(captured_prompts))
 
-        result = generate_module_activities(module.id)
+        generate_module_activities(module.id)
 
-        assert captured["tavily_api_key"] == "tvly-configured"
-        assert result.activities[0].to_dict()["citations"][0]["label"] == "A Source"
+        assert "A GPU Primer" in captured_prompts[1]
 
 
-def test_generate_module_activities_skips_retrieval_agent_without_tavily_key(real_llm_app, monkeypatch) -> None:
+def test_generate_module_activities_skips_retrieval_without_tavily_key(real_llm_app, monkeypatch) -> None:
     with real_llm_app.app_context():
         module = _make_module()
 
         def fail_if_called(*args, **kwargs):
-            raise AssertionError("run_agent should not be called without a Tavily key")
+            raise AssertionError("web_search should not be called without a Tavily key")
 
-        monkeypatch.setattr("app.services.module_generation.run_agent", fail_if_called)
-        monkeypatch.setattr(
-            "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse(
-                '{"activities": [{"type": "reading", "title": "T", "estimatedMinutes": 10}]}'
-            ),
-        )
+        monkeypatch.setattr("app.services.module_retrieval.web_search", fail_if_called)
+        captured_prompts: list = []
+        monkeypatch.setattr("app.services.llm.litellm.completion", _mock_completion(captured_prompts))
 
-        result = generate_module_activities(module.id)
+        generate_module_activities(module.id)
 
-        assert result.activities[0].title == "T"
+        assert "No search results are available for this activity" in captured_prompts[1]
+
+
+def test_generate_module_activities_uses_advanced_search_depth_when_deep_search_enabled(
+    real_llm_app, monkeypatch
+) -> None:
+    with real_llm_app.app_context():
+        settings = UserSettings.get_or_create()
+        settings.tavily_api_key = "tvly-configured"
+        settings.deep_search_enabled = True
+        _db.session.commit()
+        module = _make_module()
+
+        captured_search_depth: dict = {}
+
+        def fake_web_search(query, api_key, search_depth="basic"):
+            captured_search_depth["value"] = search_depth
+            return []
+
+        monkeypatch.setattr("app.services.module_retrieval.web_search", fake_web_search)
+        captured_prompts: list = []
+        monkeypatch.setattr("app.services.llm.litellm.completion", _mock_completion(captured_prompts))
+
+        generate_module_activities(module.id)
+
+        assert captured_search_depth["value"] == "advanced"

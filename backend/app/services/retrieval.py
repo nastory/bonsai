@@ -20,13 +20,15 @@ class RetrievalError(Exception):
     """Raised when a Tavily search or page-fetch call fails."""
 
 
-def web_search(query: str, api_key: str, max_results: int = 5) -> list[dict]:
+def web_search(query: str, api_key: str, max_results: int = 5, search_depth: str = "basic") -> list[dict]:
     """Search the public web for material relevant to a query.
 
     Args:
         query: The search query.
         api_key: The learner's Tavily API key.
         max_results: Maximum number of results to return.
+        search_depth: Tavily's "basic" (default, faster) or "advanced"
+            (slower, more thorough) search mode. See UserSettings.deep_search_enabled.
 
     Returns:
         A list of {"title": str, "url": str, "content": str} dicts.
@@ -46,7 +48,7 @@ def web_search(query: str, api_key: str, max_results: int = 5) -> list[dict]:
     try:
         response = requests.post(
             SEARCH_URL,
-            json={"api_key": api_key, "query": query, "max_results": max_results},
+            json={"api_key": api_key, "query": query, "max_results": max_results, "search_depth": search_depth},
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()

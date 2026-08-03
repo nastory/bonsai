@@ -2,12 +2,22 @@ import type { Course, InterviewStep, UserSettings, UserSettingsPatch } from '../
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+/** A backend error with a specific, user-facing message (e.g. an unsupported document format). */
+export class ApiError extends Error {}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // FormData bodies (file uploads) need the browser to set their own
+  // multipart boundary header; a hardcoded JSON content-type would break them.
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    ...(isFormData ? {} : { headers: { 'Content-Type': 'application/json' } }),
     ...init,
   });
   if (!response.ok) {
+    const body: { error?: string } | null = await response.json().catch(() => null);
+    if (body?.error) {
+      throw new ApiError(body.error);
+    }
     throw new Error(`${init?.method ?? 'GET'} ${path} failed: ${response.status}`);
   }
   return response.json();
@@ -36,17 +46,27 @@ export function fetchCourse(courseId: string): Promise<Course> {
   return request<Course>(`/courses/${courseId}`);
 }
 
-export function startCourse(message: string): Promise<InterviewStep> {
+export function startCourse(message: string, files: File[] = []): Promise<InterviewStep> {
+  const formData = new FormData();
+  formData.append('message', message);
+  files.forEach((file) => formData.append('files', file));
   return request<InterviewStep>('/courses', {
     method: 'POST',
-    body: JSON.stringify({ message }),
+    body: formData,
   });
 }
 
-export function submitInterviewAnswer(courseId: string, answer: string): Promise<InterviewStep> {
+export function submitInterviewAnswer(
+  courseId: string,
+  answer: string,
+  files: File[] = [],
+): Promise<InterviewStep> {
+  const formData = new FormData();
+  formData.append('answer', answer);
+  files.forEach((file) => formData.append('files', file));
   return request<InterviewStep>(`/courses/${courseId}/interview-messages`, {
     method: 'POST',
-    body: JSON.stringify({ answer }),
+    body: formData,
   });
 }
 

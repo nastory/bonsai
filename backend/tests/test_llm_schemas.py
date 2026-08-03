@@ -10,9 +10,10 @@ import pytest
 
 from app.services.llm_schemas import (
     CourseOutlineSchema,
+    GeneratedActivitySchema,
     InterviewStepSchema,
     LLMOutputValidationError,
-    ModuleActivitiesSchema,
+    ModuleDigestSchema,
     validate_llm_json,
 )
 
@@ -87,62 +88,118 @@ def test_validate_llm_json_raises_when_module_missing_required_field() -> None:
         validate_llm_json(raw, CourseOutlineSchema)
 
 
-def test_validate_llm_json_accepts_well_formed_module_activities() -> None:
+def test_validate_llm_json_accepts_module_with_planned_activities() -> None:
     raw = """
     {
-        "activities": [
-            {"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."},
-            {"type": "quiz", "title": "Check", "estimatedMinutes": 5, "question": "Why?", "options": ["A", "B"]}
-        ]
-    }
-    """
-
-    result = validate_llm_json(raw, ModuleActivitiesSchema)
-
-    assert len(result.activities) == 2
-    assert result.activities[0].type == "reading"
-    assert result.activities[0].body == "Some reading."
-    assert result.activities[1].options == ["A", "B"]
-
-
-def test_validate_llm_json_raises_for_invalid_activity_type() -> None:
-    raw = '{"activities": [{"type": "video", "title": "T", "estimatedMinutes": 10}]}'
-
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json(raw, ModuleActivitiesSchema)
-
-
-def test_validate_llm_json_module_activities_omits_type_specific_fields_when_not_given() -> None:
-    raw = '{"activities": [{"type": "discussion", "title": "Talk", "estimatedMinutes": 10, "prompt": "Thoughts?"}]}'
-
-    result = validate_llm_json(raw, ModuleActivitiesSchema)
-
-    assert result.activities[0].body is None
-    assert result.activities[0].question is None
-    assert result.activities[0].prompt == "Thoughts?"
-
-
-def test_validate_llm_json_accepts_activity_citations() -> None:
-    raw = """
-    {
-        "activities": [
+        "title": "GPU Programming", "description": "A practical intro.", "prerequisites": [],
+        "estimatedTimeline": "6 weeks",
+        "modules": [
             {
-                "type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading.",
-                "citations": [{"label": "An Introduction to GPUs", "url": "https://example.com/gpus"}]
+                "title": "Basics", "description": "d", "estimatedTimeline": "1 week", "learningOutcomes": ["Explain SIMT"],
+                "plannedActivities": [
+                    {"type": "reading", "title": "Intro to GPUs", "plan": "Cover the basics of GPU architecture."},
+                    {"type": "assessment", "title": "Check Your Understanding", "plan": "Quiz the fundamentals."}
+                ]
             }
         ]
     }
     """
 
-    result = validate_llm_json(raw, ModuleActivitiesSchema)
+    result = validate_llm_json(raw, CourseOutlineSchema)
 
-    assert result.activities[0].citations[0].label == "An Introduction to GPUs"
-    assert result.activities[0].citations[0].url == "https://example.com/gpus"
+    assert len(result.modules[0].plannedActivities) == 2
+    assert result.modules[0].plannedActivities[0].type == "reading"
+    assert result.modules[0].plannedActivities[1].plan == "Quiz the fundamentals."
+
+
+def test_validate_llm_json_module_planned_activities_defaults_to_empty_list() -> None:
+    raw = """
+    {
+        "title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week",
+        "modules": [{"title": "M", "description": "d", "estimatedTimeline": "1 week"}]
+    }
+    """
+
+    result = validate_llm_json(raw, CourseOutlineSchema)
+
+    assert result.modules[0].plannedActivities == []
+
+
+def test_validate_llm_json_raises_for_invalid_planned_activity_type() -> None:
+    raw = """
+    {
+        "title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week",
+        "modules": [
+            {
+                "title": "M", "description": "d", "estimatedTimeline": "1 week",
+                "plannedActivities": [{"type": "video", "title": "T", "plan": "p"}]
+            }
+        ]
+    }
+    """
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, CourseOutlineSchema)
+
+
+def test_validate_llm_json_accepts_well_formed_generated_activity() -> None:
+    raw = '{"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."}'
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert result.type == "reading"
+    assert result.body == "Some reading."
+
+
+def test_validate_llm_json_raises_for_invalid_activity_type() -> None:
+    raw = '{"type": "video", "title": "T", "estimatedMinutes": 10}'
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, GeneratedActivitySchema)
+
+
+def test_validate_llm_json_generated_activity_omits_type_specific_fields_when_not_given() -> None:
+    raw = '{"type": "discussion", "title": "Talk", "estimatedMinutes": 10, "prompt": "Thoughts?"}'
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert result.body is None
+    assert result.question is None
+    assert result.prompt == "Thoughts?"
+
+
+def test_validate_llm_json_accepts_activity_citations() -> None:
+    raw = """
+    {
+        "type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading.",
+        "citations": [{"label": "An Introduction to GPUs", "url": "https://example.com/gpus"}]
+    }
+    """
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert result.citations[0].label == "An Introduction to GPUs"
+    assert result.citations[0].url == "https://example.com/gpus"
 
 
 def test_validate_llm_json_activity_citations_default_to_none() -> None:
-    raw = '{"activities": [{"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."}]}'
+    raw = '{"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."}'
 
-    result = validate_llm_json(raw, ModuleActivitiesSchema)
+    result = validate_llm_json(raw, GeneratedActivitySchema)
 
-    assert result.activities[0].citations is None
+    assert result.citations is None
+
+
+def test_validate_llm_json_accepts_well_formed_module_digest() -> None:
+    raw = '{"digest": "Covered SIMT execution and warp divergence."}'
+
+    result = validate_llm_json(raw, ModuleDigestSchema)
+
+    assert result.digest == "Covered SIMT execution and warp divergence."
+
+
+def test_validate_llm_json_raises_when_module_digest_missing_digest_field() -> None:
+    raw = "{}"
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, ModuleDigestSchema)

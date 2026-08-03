@@ -28,6 +28,20 @@ class InterviewStepSchema(BaseModel):
     question: str | None = None
 
 
+class PlannedActivitySchema(BaseModel):
+    """Expected shape of one planned activity within a course_outline.md module.
+
+    Decided at outline time, alongside the rest of the syllabus: type and
+    title, plus a one-to-two sentence plan of what it should cover. No
+    content yet — that's module-generation's job, once this module is
+    reached.
+    """
+
+    type: Literal["reading", "quiz", "essay", "project", "discussion", "assessment"]
+    title: str
+    plan: str
+
+
 class CourseModuleSchema(BaseModel):
     """Expected shape of one module within a course_outline.md response."""
 
@@ -35,6 +49,7 @@ class CourseModuleSchema(BaseModel):
     description: str
     estimatedTimeline: str
     learningOutcomes: list[str] = Field(default_factory=list)
+    plannedActivities: list[PlannedActivitySchema] = Field(default_factory=list)
 
 
 class CourseOutlineSchema(BaseModel):
@@ -47,6 +62,42 @@ class CourseOutlineSchema(BaseModel):
     modules: list[CourseModuleSchema]
 
 
+class CourseContextSchema(BaseModel):
+    """Expected shape of a course_context_compaction.md response.
+
+    Condensed once, at outline approval (see course_generation.py's
+    approve_outline()), from the full interview conversation and approved
+    outline. Stored on Course.context_summary and read back via
+    app/services/course_context.py, rather than either being reparsed as
+    prose or requiring every future generation call to replay the full
+    conversation.
+    """
+
+    summary: str
+    learnerProfile: str
+    keyDecisions: list[str] = Field(default_factory=list)
+
+
+class ActivitySearchPlanSchema(BaseModel):
+    """Search terms planned for one activity within a module_search_terms.md response."""
+
+    activityIndex: int
+    terms: list[str] = Field(default_factory=list)
+
+
+class ModuleSearchPlanSchema(BaseModel):
+    """Expected shape of a module_search_terms.md response.
+
+    One entry per activity in the module's activity_plan, keyed by index
+    (matched positionally rather than by title, which is fragile) — see
+    app/services/module_retrieval.py's plan_activity_searches(), which
+    validates the returned index set exactly covers the planned activities
+    before this is trusted.
+    """
+
+    activities: list[ActivitySearchPlanSchema]
+
+
 class CitationSchema(BaseModel):
     """A citation linking generated content back to a real web source."""
 
@@ -54,7 +105,12 @@ class CitationSchema(BaseModel):
     url: str
 
 class GeneratedActivitySchema(BaseModel):
-    """Expected shape of one activity within a module_generation.md response."""
+    """Expected shape of one module_activity_generation.md response.
+
+    Module generation calls this once per planned activity (see
+    module_generation.py), so this is the top-level response shape for that
+    call, not wrapped in a list.
+    """
 
     type: Literal["reading", "quiz", "essay", "project", "discussion", "assessment"]
     title: str
@@ -63,15 +119,37 @@ class GeneratedActivitySchema(BaseModel):
     question: str | None = None
     options: list[str] | None = None
     prompt: str | None = None
-    # Populated when the retrieval agent (see retrieval_agent.py) grounded
-    # this activity's content in real web sources; None when it wasn't used
-    # (no Tavily key configured, or a BYOM model that didn't call the tools).
+    # Populated when this activity's content drew on a retrieved search
+    # result (see module_retrieval.py); None when it didn't (no search
+    # results for this activity, or no Tavily key configured).
     citations: list[CitationSchema] | None = None
 
-class ModuleActivitiesSchema(BaseModel):
-    """Expected shape of a module_generation.md response."""
 
-    activities: list[GeneratedActivitySchema]
+class ModuleDigestSchema(BaseModel):
+    """Expected shape of a module_digest.md response.
+
+    Generated once, right after a module's activities finish generating
+    (see module_generation.py), and persisted as a "module_learning_digest"
+    ConversationMessage. This is the condensed memory later modules build on
+    via app/services/course_context.py's assemble_learning_history() —
+    deliberately not the full activity text.
+    """
+
+    digest: str
+
+
+class DocumentSummarySchema(BaseModel):
+    """Expected shape of a document_summary.md response.
+
+    Generated once per attached document, at ingestion time (see
+    course_generation.py's _ingest_source_materials()), and persisted onto
+    SourceMaterial.interview_summary — the interview prompt uses this
+    instead of the document's full extracted text, which stays reserved for
+    outline/module generation.
+    """
+
+    summary: str
+
 
 def validate_llm_json(raw: str, schema: type[BaseModel]) -> BaseModel:
     """Parse and validate an LLM response against an expected schema.
@@ -96,7 +174,12 @@ def validate_llm_json(raw: str, schema: type[BaseModel]) -> BaseModel:
     text = text.strip()
 
     try:
-        data = json.loads(text)
+        # strict=False: models frequently emit literal newlines inside long
+        # free-text fields (e.g. an activity's "body") instead of escaping
+        # them as \n, which the JSON spec technically disallows in strings.
+        # Real models do this often enough (confirmed against Ollama/llama3)
+        # that failing on it isn't a useful signal of actually malformed output.
+        data = json.loads(text, strict=False)
     except json.JSONDecodeError as e:
         raise LLMOutputValidationError(f"LLM response was not valid JSON: {e}") from e
 

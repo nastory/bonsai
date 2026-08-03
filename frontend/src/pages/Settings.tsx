@@ -288,6 +288,18 @@ export function Settings() {
                 ? 'A key is configured.'
                 : 'No key set yet.'}
         </p>
+        <div className="mt-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-bonsai-text">Deep search</p>
+            <p className="mt-0.5 text-xs text-bonsai-text-muted">
+              Slower, more thorough searches when generating module content.
+            </p>
+          </div>
+          <Toggle
+            checked={user.deepSearchEnabled}
+            onChange={(deepSearchEnabled) => save({ deepSearchEnabled })}
+          />
+        </div>
       </Card>
 
       <Card className="mt-4">

@@ -9,7 +9,7 @@ Run with: python seed.py
 
 from app import create_app
 from app.extensions import db
-from app.models import Activity, Course, Module, SourceMaterial
+from app.models import Activity, Course, Module
 
 
 def seed() -> None:
@@ -40,13 +40,11 @@ def _gpu_programming_course() -> Course:
         estimated_timeline="6 weeks",
         thumbnail_url="from-emerald-950 to-emerald-800",
     )
-    course.source_materials = [
-        SourceMaterial(
-            id="src-1",
-            file_name="Efficient-Memory-Coalescing-in-CUDA-Kernels.pdf",
-            file_path="/data/source_materials/src-1.pdf",
-        ),
-    ]
+    # No SourceMaterial fixture here: real ingestion (see
+    # app/services/document_extraction.py) needs a real extracted-text file
+    # on disk to back one, which this demo seed data never had — a fake
+    # placeholder would crash module generation's document-grounded branch
+    # the moment it tried to read a nonexistent file.
 
     module_1 = Module(
         id="module-1",
@@ -105,6 +103,12 @@ def _gpu_programming_course() -> Course:
         estimated_timeline="2 weeks",
         status="locked",
         learning_outcomes=["Write and launch a basic CUDA kernel", "Implement a parallel reduction"],
+        activity_plan=[
+            {"type": "reading", "title": "Writing Your First Kernel", "plan": "Kernel syntax and launch configuration."},
+            {"type": "reading", "title": "Parallel Patterns: Map, Reduce, Scan", "plan": "The three patterns and when to use each."},
+            {"type": "project", "title": "Implement a Parallel Reduction", "plan": "Hands-on reduction kernel."},
+            {"type": "assessment", "title": "Module 3 Assessment", "plan": "Quiz on kernels and parallel patterns."},
+        ],
     )
 
     module_4 = Module(
@@ -117,6 +121,10 @@ def _gpu_programming_course() -> Course:
         learning_outcomes=[
             "Use a profiler to identify a kernel's bottleneck",
             "Apply at least two optimization techniques to improve throughput",
+        ],
+        activity_plan=[
+            {"type": "reading", "title": "Profiling Tools Overview", "plan": "Introduce common GPU profiling tools."},
+            {"type": "project", "title": "Profile and Optimize a Kernel", "plan": "Capstone: profile, optimize, and report gains."},
         ],
     )
 
@@ -145,7 +153,12 @@ def _deep_learning_foundations_course() -> Course:
         Module(id="dl-module-3", position=2, title="Attention & Transformers",
                description="Self-attention and the transformer architecture, capstone project included.",
                estimated_timeline="2 weeks", status="locked",
-               learning_outcomes=["Implement scaled dot-product attention from scratch"]),
+               learning_outcomes=["Implement scaled dot-product attention from scratch"],
+               activity_plan=[
+                   {"type": "reading", "title": "Self-Attention Explained", "plan": "Queries, keys, and values."},
+                   {"type": "reading", "title": "The Transformer Architecture", "plan": "Encoder/decoder stacks and positional encoding."},
+                   {"type": "project", "title": "Implement Scaled Dot-Product Attention", "plan": "Capstone: build attention from scratch."},
+               ]),
     ]
     return course
 
@@ -167,19 +180,40 @@ def _data_structures_course() -> Course:
         Module(id="dsa-module-2", position=1, title="Stacks, Queues & Trees",
                description="Core structures and their traversal patterns.",
                estimated_timeline="2 weeks", status="locked",
-               learning_outcomes=["Implement a binary search tree"]),
+               learning_outcomes=["Implement a binary search tree"],
+               activity_plan=[
+                   {"type": "reading", "title": "Stacks & Queues", "plan": "LIFO/FIFO structures and their use cases."},
+                   {"type": "reading", "title": "Trees & Traversal", "plan": "Binary trees and traversal orders."},
+                   {"type": "project", "title": "Implement a Binary Search Tree", "plan": "Build and traverse a BST."},
+                   {"type": "assessment", "title": "Module 2 Assessment", "plan": "Quiz on stacks, queues, and trees."},
+               ]),
         Module(id="dsa-module-3", position=2, title="Graphs",
                description="Graph representations, BFS/DFS, and shortest paths.",
                estimated_timeline="2 weeks", status="locked",
-               learning_outcomes=["Implement Dijkstra's algorithm"]),
+               learning_outcomes=["Implement Dijkstra's algorithm"],
+               activity_plan=[
+                   {"type": "reading", "title": "Graph Representations", "plan": "Adjacency lists vs. matrices."},
+                   {"type": "reading", "title": "BFS, DFS & Shortest Paths", "plan": "Traversal algorithms and Dijkstra's algorithm."},
+                   {"type": "project", "title": "Implement Dijkstra's Algorithm", "plan": "Build a shortest-path solver."},
+                   {"type": "assessment", "title": "Module 3 Assessment", "plan": "Quiz on graph algorithms."},
+               ]),
         Module(id="dsa-module-4", position=3, title="Sorting & Searching",
                description="Comparison sorts, divide-and-conquer, and binary search.",
                estimated_timeline="1 week", status="locked",
-               learning_outcomes=["Compare sorting algorithms by time and space complexity"]),
+               learning_outcomes=["Compare sorting algorithms by time and space complexity"],
+               activity_plan=[
+                   {"type": "reading", "title": "Comparison Sorts", "plan": "Merge sort, quicksort, and their complexity."},
+                   {"type": "reading", "title": "Binary Search", "plan": "Divide-and-conquer search on sorted data."},
+                   {"type": "assessment", "title": "Module 4 Assessment", "plan": "Quiz on sorting and searching."},
+               ]),
         Module(id="dsa-module-5", position=4, title="Dynamic Programming Capstone",
                description="A capstone project solving a real optimization problem with DP.",
                estimated_timeline="2 weeks", status="locked",
-               learning_outcomes=["Recognize and solve overlapping-subproblem problems"]),
+               learning_outcomes=["Recognize and solve overlapping-subproblem problems"],
+               activity_plan=[
+                   {"type": "reading", "title": "Dynamic Programming Fundamentals", "plan": "Overlapping subproblems and memoization."},
+                   {"type": "project", "title": "Solve an Optimization Problem with DP", "plan": "Capstone: apply DP to a real problem."},
+               ]),
     ]
     return course
 

@@ -78,6 +78,8 @@ export interface InterviewStep {
   courseId: string;
   done: boolean;
   question: string | null;
+  /** The course's full accumulated source materials, not just any attached this turn. */
+  sourceMaterials: SourceMaterial[];
 }
 
 export interface ModelProviderSettings {
@@ -105,6 +107,8 @@ export interface UserSettings {
   embeddingModel?: string;
   /** Whether a Tavily key is stored on the backend. The raw key is never sent back on read. */
   hasTavilyApiKey: boolean;
+  /** Uses Tavily's slower, more thorough "advanced" search mode for module-generation searches. */
+  deepSearchEnabled: boolean;
 }
 
 /**
@@ -127,4 +131,5 @@ export interface UserSettingsPatch {
   embeddingModel?: string;
   /** Write-only, like apiKey: sets a new Tavily key, never reads one back. */
   tavilyApiKey?: string;
+  deepSearchEnabled?: boolean;
 }
