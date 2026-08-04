@@ -215,7 +215,7 @@ def test_direction_interview_prompt_includes_learning_history_and_real_turns(rea
 
         def fake_completion(**kwargs):
             captured.append(kwargs["messages"])
-            return _FakeResponse('{"done": false, "question": "another question"}')
+            return _FakeResponse('{"coverage": "open", "done": false, "question": "another question"}')
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
@@ -237,7 +237,7 @@ def test_direction_outline_prompt_includes_learning_history(real_llm_app, monkey
 
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"done": false, "question": "a question"}'),
+            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
         )
         start_direction_change("m0", "I want to focus more on hardware internals")
 

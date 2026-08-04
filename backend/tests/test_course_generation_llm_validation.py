@@ -49,7 +49,7 @@ def test_generate_outline_raises_when_model_omits_modules(real_llm_app, monkeypa
     # and there's a real course to call generate_outline against.
     monkeypatch.setattr(
         "app.services.llm.litellm.completion",
-        lambda **kwargs: _FakeResponse('{"done": false, "question": "a question"}'),
+        lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
     )
     step = start_course("I want to learn GPU programming")
 
@@ -68,7 +68,7 @@ def test_generate_outline_raises_when_model_omits_modules(real_llm_app, monkeypa
 def test_approve_outline_raises_when_compaction_response_is_malformed(real_llm_app, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.llm.litellm.completion",
-        lambda **kwargs: _FakeResponse('{"done": false, "question": "a question"}'),
+        lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
     )
     step = start_course("I want to learn GPU programming")
 

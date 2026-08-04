@@ -138,7 +138,7 @@ def test_interview_prompt_uses_document_summary_not_raw_text(real_llm_app, monke
         # the document (ingestion), then ask the first interview question.
         responses = [
             _FakeResponse('{"summary": "A short paper about GPU memory coalescing."}'),
-            _FakeResponse('{"done": false, "question": "a question"}'),
+            _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
         ]
         captured: dict = {}
 
@@ -164,8 +164,8 @@ def test_interview_sends_real_conversation_turns_not_flattened_text(real_llm_app
     with real_llm_app.app_context():
         responses = iter(
             [
-                _FakeResponse('{"done": false, "question": "What is your experience with GPUs?"}'),
-                _FakeResponse('{"done": false, "question": "another question"}'),
+                _FakeResponse('{"coverage": "open", "done": false, "question": "What is your experience with GPUs?"}'),
+                _FakeResponse('{"coverage": "open", "done": false, "question": "another question"}'),
             ]
         )
         captured: list = []
@@ -210,7 +210,7 @@ def test_interview_prompt_includes_parent_context_when_branched(real_llm_app, mo
 
         def fake_completion(**kwargs):
             captured["prompt"] = kwargs["messages"][0]["content"]
-            return _FakeResponse('{"done": false, "question": "a question"}')
+            return _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}')
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
@@ -225,7 +225,7 @@ def test_interview_prompt_omits_parent_context_when_not_branched(real_llm_app, m
 
         def fake_completion(**kwargs):
             captured["prompt"] = kwargs["messages"][0]["content"]
-            return _FakeResponse('{"done": false, "question": "a question"}')
+            return _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}')
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
@@ -255,7 +255,7 @@ def test_outline_prompt_includes_parent_context_when_branched(real_llm_app, monk
 
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"done": false, "question": "a question"}'),
+            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
         )
         step = start_course("I want to go deeper on this", parent_course_id="parent-1")
 
@@ -278,7 +278,7 @@ def test_outline_prompt_includes_source_material_text(real_llm_app, monkeypatch)
     with real_llm_app.app_context():
         responses = [
             _FakeResponse('{"summary": "A short paper about GPU memory coalescing."}'),
-            _FakeResponse('{"done": false, "question": "a question"}'),
+            _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
         ]
         monkeypatch.setattr("app.services.llm.litellm.completion", lambda **kwargs: responses.pop(0))
         file = FileStorage(
@@ -307,7 +307,7 @@ def test_outline_regeneration_includes_prior_outline_and_revision_request_as_tur
 ) -> None:
     with real_llm_app.app_context():
         responses = [
-            _FakeResponse('{"done": false, "question": "a question"}'),
+            _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
             _FakeResponse(
                 '{"title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week", "modules": []}'
             ),
@@ -352,7 +352,7 @@ def test_interview_hard_stops_at_max_questions_without_calling_the_model(real_ll
     with real_llm_app.app_context():
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"done": false, "question": "a question"}'),
+            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
         )
         step = start_course("I want to learn GPU programming")
         course_id = step.course.id

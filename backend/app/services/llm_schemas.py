@@ -22,24 +22,45 @@ class LLMOutputValidationError(Exception):
 
 
 class InterviewStepSchema(BaseModel):
-    """Expected shape of a course_interview.md response."""
+    """Expected shape of a course_interview.md / module_direction_interview.md response.
 
+    `coverage` comes first deliberately and is discarded by the caller: it's
+    a scratchpad the model must fill in ("what's already been asked/answered,
+    what's still missing") before it commits to `done`/`question`. Field
+    order in a Pydantic model carries through to the JSON schema's property
+    order, which schema-constrained decoding generates in order — so this
+    forces the model to write out its own state-tracking before deciding,
+    the same "think before answering" effect as chain-of-thought prompting,
+    just inside the structured response instead of free text. Added after
+    live testing showed a small local model (llama3 via Ollama) losing track
+    of topics already answered a few turns back and re-asking them in
+    different words, even with an explicit "don't repeat topics" instruction
+    and no scratchpad — plain instruction-following wasn't enough on its own.
+
+    `question` is always a required, non-nullable string — even when `done`
+    is true, where the caller ignores its content — deliberately, not just
+    when a follow-up question is expected. Making it Optional (as it used to
+    be, required only via a model_validator when `done` was false) left a
+    gap: schema-constrained decoding only enforces plain Pydantic-required
+    fields, not a conditional requirement enforced by a validator. Ollama/
+    llama3 exploited exactly that gap in practice, confirmed live, returning
+    `{"done": false, "question": null}` — structurally valid against the
+    Optional field, useless to the learner. Making the field itself required
+    closes the gap at the decoding level (the same fix pattern as
+    GeneratedQuizActivityDecodingSchema), not just at post-hoc validation.
+    """
+
+    coverage: str = Field(min_length=1)
     done: bool
-    question: str | None = None
+    question: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _question_required_when_not_done(self) -> "InterviewStepSchema":
-        """Reject a response that's structurally valid but practically useless.
-
-        `{"done": false, "question": ""}` (or `null`) passes the plain field
-        types above, but leaves the learner staring at a chat with nothing to
-        answer — the interview silently stalls instead of failing clearly.
-        Confirmed happening against real Ollama/llama3. Raising here turns it
-        into the same clear 502 every other malformed response already gets,
-        instead of a confusing dead end.
-        """
-        if not self.done and not (self.question and self.question.strip()):
-            raise ValueError('"question" must be a non-empty string when "done" is false')
+    def _fields_not_blank(self) -> "InterviewStepSchema":
+        """Reject whitespace-only text, which `min_length` alone wouldn't catch."""
+        if not self.coverage.strip():
+            raise ValueError('"coverage" must not be blank')
+        if not self.question.strip():
+            raise ValueError('"question" must not be blank')
         return self
 
 

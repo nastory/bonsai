@@ -39,7 +39,7 @@ from app.services.prompts import load_prompt
 from app.services.content_storage import delete_activity_content
 from app.services.source_material_storage import delete_source_material_text, save_source_material_text
 
-MAX_INTERVIEW_QUESTIONS = 10
+MAX_INTERVIEW_QUESTIONS = 7
 
 
 class CourseNotFoundError(Exception):
@@ -418,11 +418,13 @@ def _advance_direction_interview(module: Module) -> InterviewStep:
 
 def _next_direction_interview_step(module: Module, questions_asked: int) -> InterviewStepSchema:
     if questions_asked >= MAX_INTERVIEW_QUESTIONS:
-        return InterviewStepSchema(done=True, question=None)
+        return InterviewStepSchema(coverage="max questions reached", done=True, question="(interview complete)")
 
     if current_app.config.get("LLM_TEST_MODE"):
         return InterviewStepSchema(
-            done=False, question=f"[MOCK] Direction-change follow-up {questions_asked + 1}."
+            coverage="[MOCK] coverage note",
+            done=False,
+            question=f"[MOCK] Direction-change follow-up {questions_asked + 1}.",
         )
 
     system_prompt = load_prompt(
@@ -562,17 +564,20 @@ def _advance_interview(course: Course) -> InterviewStep:
 
 def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepSchema:
     if questions_asked >= MAX_INTERVIEW_QUESTIONS:
-        return InterviewStepSchema(done=True, question=None)
+        return InterviewStepSchema(coverage="max questions reached", done=True, question="(interview complete)")
 
     if current_app.config.get("LLM_TEST_MODE"):
         if course.source_materials:
             filenames = ", ".join(m.file_name for m in course.source_materials)
             return InterviewStepSchema(
+                coverage="[MOCK] coverage note",
                 done=False,
                 question=f"[MOCK] Follow-up question {questions_asked + 1} about {filenames}.",
             )
         return InterviewStepSchema(
-            done=False, question=f"[MOCK] Follow-up question {questions_asked + 1} about your goals."
+            coverage="[MOCK] coverage note",
+            done=False,
+            question=f"[MOCK] Follow-up question {questions_asked + 1} about your goals.",
         )
 
     system_prompt = load_prompt(

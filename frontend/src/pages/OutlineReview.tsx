@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -18,6 +18,7 @@ export function OutlineReview() {
   const [feedback, setFeedback] = useState('');
   const [requested, setRequested] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [revising, setRevising] = useState(false);
 
   useEffect(() => {
     if (!courseId) return;
@@ -30,6 +31,7 @@ export function OutlineReview() {
     e.preventDefault();
     if (!feedback.trim() || !courseId) return;
     setSubmitting(true);
+    setRevising(true);
     try {
       const updated = await submitOutlineFeedback(courseId, feedback);
       setCourse(updated);
@@ -39,6 +41,7 @@ export function OutlineReview() {
       console.error('Failed to revise the outline:', err);
     } finally {
       setSubmitting(false);
+      setRevising(false);
     }
   };
 
@@ -129,6 +132,18 @@ export function OutlineReview() {
       <Button className="mt-6 w-full" onClick={handleStartLearning} disabled={submitting}>
         Start Learning
       </Button>
+
+      {revising && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+          <Card className="flex w-full max-w-sm flex-col items-center gap-3 py-8 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-bonsai-green" />
+            <p className="font-semibold text-bonsai-text">Updating your course outline...</p>
+            <p className="text-sm text-bonsai-text-muted">
+              This can take a little while, especially with a local model.
+            </p>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

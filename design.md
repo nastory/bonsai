@@ -465,6 +465,13 @@ Gated behind a new `UserSettings.visual_aids_enabled` (Boolean, default `False`,
 ### Deliberately out of scope for v1
 Non-`reading` activity types (essay/project/discussion prompts are short instructions, not explanatory prose); local image download/caching; and LLM-judged re-ranking across multiple image candidates — Tavily's own relevance ranking is trusted for the first cut, revisited only if results are visibly poor in practice.
 
+## Roadmap: opt-in web-search supplementing for document-grounded courses (Phase 2, not yet built)
+
+Scoped, not started — and not really a new feature so much as reconciling the PRD against what actually shipped. The PRD's Retrieval & Citation section always said a document-grounded course's retrieval agent should "supplement [the document] with web search rather than replacing it," but the Nineteenth build slice's real implementation (document ingestion, Slice 5 above) deliberately does the opposite: `_generate_activities_content()` skips `plan_activity_searches()`/`retrieve_for_module()` entirely whenever `module.course.source_materials` is non-empty. Found while scoping this against the PRD text directly.
+
+### Likely shape
+Make it an explicit per-course choice instead of an implicit always-skip: at document-upload time during course creation, ask the learner whether to supplement the attached document with online resources. Default (no answer, or "no") stays document-only, matching what's shipped today; opting in runs the document-grounded course through the same search-planning/retrieval path a no-document course already uses (`module_retrieval.py`'s `plan_activity_searches()`/`retrieve_for_module()`), document as primary source, web results supplementing rather than replacing it. Where exactly the yes/no question fits in the interview flow, and the schema/prompt/storage changes needed to carry that choice from upload time through to module generation, aren't decided yet.
+
 ## Phase 1: Docker Compose for local development
 
 Thirteenth build slice. The PRD's Technical Constraints section says deployment isn't Docker-first, to keep the door open for a later Electron/Tauri desktop wrapper; that's about how the app eventually gets *packaged and distributed*, and is unchanged by this slice. This is purely a local development convenience: `docker compose up --build` now replaces manually running `npm run dev` and `python run.py` in two terminals.

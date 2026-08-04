@@ -34,7 +34,7 @@ def test_start_course_calls_litellm_with_byom_settings(real_llm_app, monkeypatch
 
     def fake_completion(**kwargs):
         captured.update(kwargs)
-        return _FakeResponse('{"done": false, "question": "What is your experience level?"}')
+        return _FakeResponse('{"coverage": "open", "done": false, "question": "What is your experience level?"}')
 
     monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
