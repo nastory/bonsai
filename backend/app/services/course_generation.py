@@ -16,6 +16,7 @@ from werkzeug.datastructures import FileStorage
 from app.extensions import db
 from app.models import Course, ConversationMessage, Module, SourceMaterial
 from app.services.course_context import (
+    assemble_learning_history,
     compact_course_context,
     conversation_turns,
     render_source_materials,
@@ -25,6 +26,7 @@ from app.services.course_context import (
 from app.services.document_extraction import extract_text
 from app.services.llm import complete
 from app.services.llm_schemas import (
+    CourseDirectionChangeSchema,
     CourseModuleSchema,
     CourseOutlineSchema,
     InterviewStepSchema,
@@ -32,6 +34,7 @@ from app.services.llm_schemas import (
     validate_llm_json,
 )
 from app.services.model_selection import resolve_model_config
+from app.services.module_generation import ModuleNotFoundError
 from app.services.prompts import load_prompt
 from app.services.content_storage import delete_activity_content
 from app.services.source_material_storage import delete_source_material_text, save_source_material_text
@@ -52,7 +55,9 @@ class InterviewStep:
     question: str | None
 
 
-def start_course(first_message: str, files: list[FileStorage] | None = None) -> InterviewStep:
+def start_course(
+    first_message: str, files: list[FileStorage] | None = None, parent_course_id: str | None = None
+) -> InterviewStep:
     """Start a new course from the learner's initial description of what they want to learn.
 
     Args:
@@ -60,14 +65,24 @@ def start_course(first_message: str, files: list[FileStorage] | None = None) -> 
         files: Any documents attached alongside the first message. Ingested
             before the first follow-up question is asked, so that question
             can already be shaped by the document (see _ingest_source_materials).
+        parent_course_id: When given, this is a "Branch Off" mid-course:
+            the new course's interview/outline are shaped by what the
+            learner already covered in the parent course (see
+            _parent_context()), and Course.parent_course_id records the
+            lineage. The parent course itself is never modified — branching
+            off leaves it and its own remaining modules exactly as they were.
 
     Returns:
         The new course (in the 'interview' stage) plus the first follow-up question.
 
     Raises:
+        CourseNotFoundError: If parent_course_id doesn't match a real course.
         DocumentExtractionError: If an attached file can't be parsed. Nothing
             about this call is persisted in that case (see _ingest_source_materials).
     """
+    if parent_course_id is not None:
+        _get_course_or_raise(parent_course_id)  # validate before anything else is touched
+
     course = Course(
         id=str(uuid4()),
         title="New Course",
@@ -76,6 +91,7 @@ def start_course(first_message: str, files: list[FileStorage] | None = None) -> 
         estimated_timeline="",
         thumbnail_url="from-emerald-950 to-emerald-800",
         stage="interview",
+        parent_course_id=parent_course_id,
     )
     # Ingest before anything is added to the session: resolve_model_config()
     # (called for summarization, if there are files) can trigger its own
@@ -219,6 +235,257 @@ def delete_course(course_id: str) -> None:
     db.session.commit()
 
 
+def start_direction_change(module_id: str, message: str) -> InterviewStep:
+    """Start the "Change This Course" mid-course check-in interview for a module.
+
+    Mirrors start_course()'s shape, scoped to a module (whose course is
+    already active) instead of a fresh course. Nothing about the course's
+    remaining modules is touched until approve_direction_change() commits a
+    reviewed, approved proposal — this call and every other one in this
+    interview/proposal flow are purely additive (new ConversationMessage
+    rows tagged with this module_id).
+
+    Args:
+        module_id: The just-completed module's id, from the check-in that
+            triggered this.
+        message: The learner's own words about what they want different.
+
+    Returns:
+        done=False and the first check-in question (this interview always
+        has at least one question worth asking, unlike the from-scratch
+        interview, so this never comes back done on the first message).
+
+    Raises:
+        ModuleNotFoundError: If no module matches module_id.
+    """
+    module = _get_module_or_raise(module_id)
+    _add_message(module.course_id, "user", "direction_interview_answer", message, module_id=module.id)
+    step = _advance_direction_interview(module)
+    db.session.commit()
+    return step
+
+
+def submit_direction_change_answer(module_id: str, answer: str) -> InterviewStep:
+    """Record an answer in the "Change This Course" check-in interview and ask the next question.
+
+    Args:
+        module_id: The module's id.
+        answer: The learner's answer to the previous question.
+
+    Returns:
+        The next question, or done=True once there's enough to propose new modules.
+
+    Raises:
+        ModuleNotFoundError: If no module matches module_id.
+    """
+    module = _get_module_or_raise(module_id)
+    _add_message(module.course_id, "user", "direction_interview_answer", answer, module_id=module.id)
+    step = _advance_direction_interview(module)
+    db.session.commit()
+    return step
+
+
+def generate_direction_change_outline(module_id: str) -> CourseDirectionChangeSchema:
+    """Propose a new set of modules to replace what's ahead, from the check-in interview so far.
+
+    Nothing is applied yet: the proposal is only recorded to the
+    conversation (for submit_direction_change_feedback()/approve_direction_change()
+    to read back), not turned into real Module rows. Mirrors
+    generate_outline(), except course creation applies its outline
+    immediately (stage='outline_review' already gates it from being "live"
+    for a course that doesn't exist as far as the learner's other courses
+    are concerned) — an already-active course has no equivalent safe
+    "reviewing" state to sit in, so this holds the proposal as data instead.
+
+    Args:
+        module_id: The module's id.
+
+    Returns:
+        The proposed modules.
+
+    Raises:
+        ModuleNotFoundError: If no module matches module_id.
+    """
+    module = _get_module_or_raise(module_id)
+    proposal = _generate_direction_change_content(module, revision_feedback=None)
+    _add_message(
+        module.course_id, "assistant", "direction_outline_presented", proposal.model_dump_json(), module_id=module.id
+    )
+    db.session.commit()
+    return proposal
+
+
+def submit_direction_change_feedback(module_id: str, feedback: str) -> CourseDirectionChangeSchema:
+    """Regenerate the proposed modules based on the learner's revision feedback.
+
+    Args:
+        module_id: The module's id.
+        feedback: The learner's requested changes, in their own words.
+
+    Returns:
+        The revised proposed modules.
+
+    Raises:
+        ModuleNotFoundError: If no module matches module_id.
+    """
+    module = _get_module_or_raise(module_id)
+    _add_message(module.course_id, "user", "direction_outline_revision_request", feedback, module_id=module.id)
+    proposal = _generate_direction_change_content(module, revision_feedback=feedback)
+    _add_message(
+        module.course_id, "assistant", "direction_outline_presented", proposal.model_dump_json(), module_id=module.id
+    )
+    db.session.commit()
+    return proposal
+
+
+def approve_direction_change(module_id: str) -> Course:
+    """Commit the most recently proposed modules, replacing everything ahead of this module.
+
+    Deletes every module with position > this module's position (cascades
+    to their Activity rows too, though there shouldn't be any yet — module
+    generation is lazy, so nothing after the just-completed module has been
+    reached, hence nothing's been generated for it), then creates new
+    modules from the approved proposal at continuing positions. The first
+    new module unlocks immediately (status="in_progress"), matching
+    activities.py's existing unlock-cascade convention; the rest stay
+    "locked". Everything at or before this module (completed modules, their
+    activities, this module itself) is untouched.
+
+    Args:
+        module_id: The module's id.
+
+    Returns:
+        The course, with its remaining modules replaced.
+
+    Raises:
+        ModuleNotFoundError: If no module matches module_id, or if there's
+            no proposal to approve (generate_direction_change_outline()
+            hasn't been called, or nothing was ever proposed).
+    """
+    module = _get_module_or_raise(module_id)
+    course = module.course
+
+    proposal_message = next(
+        (
+            m
+            for m in reversed(course.conversation)
+            if m.kind == "direction_outline_presented" and m.module_id == module.id
+        ),
+        None,
+    )
+    if proposal_message is None:
+        raise ModuleNotFoundError(f"No proposed direction-change outline exists for module '{module_id}'")
+    proposal = CourseDirectionChangeSchema.model_validate_json(proposal_message.content)
+
+    for stale_module in [m for m in course.modules if m.position > module.position]:
+        db.session.delete(stale_module)
+
+    for i, planned_module in enumerate(proposal.modules):
+        course.modules.append(
+            Module(
+                id=str(uuid4()),
+                position=module.position + 1 + i,
+                title=planned_module.title,
+                description=planned_module.description,
+                estimated_timeline=planned_module.estimatedTimeline,
+                status="in_progress" if i == 0 else "locked",
+                learning_outcomes=planned_module.learningOutcomes,
+                activity_plan=[a.model_dump() for a in planned_module.plannedActivities],
+            )
+        )
+
+    _add_message(course.id, "user", "direction_change_approved", "Approved. Let's continue.", module_id=module.id)
+    db.session.commit()
+    return course
+
+
+def _advance_direction_interview(module: Module) -> InterviewStep:
+    questions_asked = sum(
+        1
+        for m in module.course.conversation
+        if m.kind == "direction_interview_question" and m.module_id == module.id
+    )
+    result = _next_direction_interview_step(module, questions_asked)
+
+    if result.done:
+        return InterviewStep(course=module.course, done=True, question=None)
+
+    _add_message(
+        module.course_id, "assistant", "direction_interview_question", result.question or "", module_id=module.id
+    )
+    return InterviewStep(course=module.course, done=False, question=result.question)
+
+
+def _next_direction_interview_step(module: Module, questions_asked: int) -> InterviewStepSchema:
+    if questions_asked >= MAX_INTERVIEW_QUESTIONS:
+        return InterviewStepSchema(done=True, question=None)
+
+    if current_app.config.get("LLM_TEST_MODE"):
+        return InterviewStepSchema(
+            done=False, question=f"[MOCK] Direction-change follow-up {questions_asked + 1}."
+        )
+
+    system_prompt = load_prompt(
+        "module_direction_interview",
+        questions_asked=questions_asked,
+        max_questions=MAX_INTERVIEW_QUESTIONS,
+        history=assemble_learning_history(module.course, up_to_module_position=module.position),
+    )
+    messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
+        module.course,
+        {"direction_interview_answer", "direction_interview_question"},
+        module_id=module.id,
+    )
+    raw = complete(messages=messages, schema=InterviewStepSchema, **resolve_model_config())
+    return validate_llm_json(raw, InterviewStepSchema)
+
+
+def _generate_direction_change_content(
+    module: Module, revision_feedback: str | None
+) -> CourseDirectionChangeSchema:
+    if current_app.config.get("LLM_TEST_MODE"):
+        return _mock_direction_change(module, revision_feedback)
+
+    system_prompt = load_prompt(
+        "module_direction_outline",
+        history=assemble_learning_history(module.course, up_to_module_position=module.position),
+    )
+    messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
+        module.course,
+        {
+            "direction_interview_answer",
+            "direction_interview_question",
+            "direction_outline_revision_request",
+            "direction_outline_presented",
+        },
+        module_id=module.id,
+    )
+    raw = complete(messages=messages, schema=CourseDirectionChangeSchema, **resolve_model_config())
+    return validate_llm_json(raw, CourseDirectionChangeSchema)
+
+
+def _mock_direction_change(module: Module, revision_feedback: str | None) -> CourseDirectionChangeSchema:
+    suffix = " (revised)" if revision_feedback else ""
+    return CourseDirectionChangeSchema(
+        modules=[
+            CourseModuleSchema(
+                title=f"[MOCK] New Direction{suffix}",
+                description="[MOCK] A module reflecting the new direction.",
+                estimatedTimeline="1 week",
+                learningOutcomes=["[MOCK] Understand the new direction"],
+                plannedActivities=[
+                    PlannedActivitySchema(
+                        type="reading", title="[MOCK] Introduction", plan="[MOCK] Cover the fundamentals."
+                    ),
+                    PlannedActivitySchema(
+                        type="assessment", title="[MOCK] Check Your Understanding", plan="[MOCK] Quiz the basics."
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
 def _get_course_or_raise(course_id: str) -> Course:
     course = db.session.get(Course, course_id)
     if course is None:
@@ -226,8 +493,17 @@ def _get_course_or_raise(course_id: str) -> Course:
     return course
 
 
-def _add_message(course_id: str, role: str, kind: str, content: str) -> None:
-    db.session.add(ConversationMessage(course_id=course_id, role=role, kind=kind, content=content))
+def _add_message(course_id: str, role: str, kind: str, content: str, module_id: str | None = None) -> None:
+    db.session.add(
+        ConversationMessage(course_id=course_id, role=role, kind=kind, content=content, module_id=module_id)
+    )
+
+
+def _get_module_or_raise(module_id: str) -> Module:
+    module = db.session.get(Module, module_id)
+    if module is None:
+        raise ModuleNotFoundError(f"No module with id '{module_id}'")
+    return module
 
 
 def _ingest_source_materials(course: Course, files: list[FileStorage] | None) -> None:
@@ -304,6 +580,7 @@ def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepS
         questions_asked=questions_asked,
         max_questions=MAX_INTERVIEW_QUESTIONS,
         source_materials=render_source_material_summaries(course),
+        parent_context=_parent_context(course),
     )
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question"}
@@ -312,11 +589,42 @@ def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepS
     return validate_llm_json(raw, InterviewStepSchema)
 
 
+def _parent_context(course: Course) -> str:
+    """Format what the learner already covered in a "Branch Off" course's parent, if any.
+
+    Empty string for an ordinary (non-branched) course, or if the parent
+    somehow no longer exists — matches every other optional prompt section's
+    empty-string-means-omit convention (see render_source_materials()).
+
+    No up_to_module_position truncation needed: a module only gets a
+    module_learning_digest once its content is actually generated (see
+    module_generation.py), which only happens once the learner reaches it —
+    so a parent's assembled history already naturally stops exactly at
+    "Branch Off"'s trigger point (the module that was just completed, whose
+    digest was generated back when the learner first reached it) without
+    needing to track or pass a position explicitly.
+
+    Args:
+        course: The (possibly branched) course being generated for.
+
+    Returns:
+        The parent's assembled learning history, or "" if not a branch.
+    """
+    if not course.parent_course_id:
+        return ""
+    parent = db.session.get(Course, course.parent_course_id)
+    if parent is None:
+        return ""
+    return assemble_learning_history(parent)
+
+
 def _generate_outline_content(course: Course, revision_feedback: str | None) -> CourseOutlineSchema:
     if current_app.config.get("LLM_TEST_MODE"):
         return _mock_outline(course, revision_feedback)
 
-    system_prompt = load_prompt("course_outline", source_materials=render_source_materials(course))
+    system_prompt = load_prompt(
+        "course_outline", source_materials=render_source_materials(course), parent_context=_parent_context(course)
+    )
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question", "outline_revision_request", "outline_presented"}
     )

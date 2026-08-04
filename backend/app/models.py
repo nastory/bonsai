@@ -96,6 +96,7 @@ class Course(db.Model):
             "thumbnailUrl": self.thumbnail_url,
             "progressPercent": self.progress_percent,
             "stage": self.stage,
+            "parentCourseId": self.parent_course_id,
             "modules": [m.to_dict() for m in self.modules],
             "sourceMaterials": [s.to_dict() for s in self.source_materials],
         }

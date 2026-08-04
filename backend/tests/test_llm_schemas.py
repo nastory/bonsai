@@ -205,6 +205,60 @@ def test_validate_llm_json_activity_citations_default_to_none() -> None:
     assert result.citations is None
 
 
+def test_validate_llm_json_accepts_well_formed_quiz_with_answer_and_explanation() -> None:
+    raw = """
+    {
+        "type": "quiz", "title": "Check", "estimatedMinutes": 10,
+        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
+        "correctAnswerIndex": 0, "explanation": "GPUs are specialized processors."
+    }
+    """
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert result.correctAnswerIndex == 0
+    assert result.explanation == "GPUs are specialized processors."
+
+
+def test_validate_llm_json_raises_when_quiz_is_missing_a_correct_answer() -> None:
+    raw = """
+    {
+        "type": "quiz", "title": "Check", "estimatedMinutes": 10,
+        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
+        "explanation": "GPUs are specialized processors."
+    }
+    """
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, GeneratedActivitySchema)
+
+
+def test_validate_llm_json_raises_when_correct_answer_index_is_out_of_range() -> None:
+    raw = """
+    {
+        "type": "assessment", "title": "Check", "estimatedMinutes": 10,
+        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
+        "correctAnswerIndex": 5, "explanation": "GPUs are specialized processors."
+    }
+    """
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, GeneratedActivitySchema)
+
+
+def test_validate_llm_json_raises_when_quiz_is_missing_an_explanation() -> None:
+    raw = """
+    {
+        "type": "quiz", "title": "Check", "estimatedMinutes": 10,
+        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
+        "correctAnswerIndex": 0
+    }
+    """
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, GeneratedActivitySchema)
+
+
 def test_validate_llm_json_accepts_well_formed_module_digest() -> None:
     raw = '{"digest": "Covered SIMT execution and warp divergence."}'
 

@@ -5,6 +5,8 @@ import { MyCourses } from './pages/MyCourses';
 import { CourseHome } from './pages/CourseHome';
 import { CreateCourse } from './pages/CreateCourse';
 import { OutlineReview } from './pages/OutlineReview';
+import { ChangeDirection } from './pages/ChangeDirection';
+import { ChangeDirectionReview } from './pages/ChangeDirectionReview';
 import { Lesson } from './pages/Lesson';
 import { Settings } from './pages/Settings';
 import { Library } from './pages/Library';
@@ -25,6 +27,14 @@ function App() {
         <Route
           path="/courses/:courseId/modules/:moduleId/activities/:activityId"
           element={<Lesson />}
+        />
+        <Route
+          path="/courses/:courseId/modules/:moduleId/change-direction"
+          element={<ChangeDirection />}
+        />
+        <Route
+          path="/courses/:courseId/modules/:moduleId/change-direction/review"
+          element={<ChangeDirectionReview />}
         />
         <Route path="/library" element={<Library />} />
         <Route path="/settings" element={<Settings />} />

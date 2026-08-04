@@ -77,29 +77,45 @@ function CheckUnderstanding({ prompt, tone }: { prompt: string; tone: 'encouragi
   );
 }
 
-function QuizBlock({ activity, tone }: { activity: Activity; tone: 'encouraging' | 'straightforward' }) {
-  const [selected, setSelected] = useState<string | null>(null);
+function QuizBlock({ activity }: { activity: Activity }) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const answered = selectedIndex !== null;
+  const isCorrect = answered && selectedIndex === activity.correctAnswerIndex;
 
   return (
     <div>
       <p className="text-sm font-medium text-bonsai-text">{activity.question}</p>
       <div className="mt-3 space-y-2">
-        {activity.options?.map((option) => (
-          <button
-            key={option}
-            onClick={() => setSelected(option)}
-            className={`w-full rounded-lg border px-4 py-2.5 text-left text-sm transition-colors ${
-              selected === option
-                ? 'border-bonsai-green bg-emerald-50 text-bonsai-text'
-                : 'border-bonsai-border bg-white text-bonsai-text hover:bg-bonsai-cream'
-            }`}
-          >
-            {option}
-          </button>
-        ))}
+        {activity.options?.map((option, index) => {
+          const isCorrectOption = index === activity.correctAnswerIndex;
+          const isPickedWrong = answered && index === selectedIndex && !isCorrectOption;
+          return (
+            <button
+              key={option}
+              onClick={() => setSelectedIndex(index)}
+              disabled={isCorrect}
+              className={`w-full rounded-lg border px-4 py-2.5 text-left text-sm transition-colors disabled:cursor-not-allowed ${
+                isCorrect && isCorrectOption
+                  ? 'border-bonsai-green bg-emerald-50 text-bonsai-text'
+                  : isPickedWrong
+                    ? 'border-red-300 bg-red-50 text-bonsai-text'
+                    : 'border-bonsai-border bg-white text-bonsai-text hover:bg-bonsai-cream'
+              }`}
+            >
+              {option}
+            </button>
+          );
+        })}
       </div>
-      {selected && (
-        <p className="mt-3 text-sm text-bonsai-green">{getFeedbackMessage(tone, 'quiz')}</p>
+      {answered && (
+        <div className="mt-3 rounded-lg bg-bonsai-cream p-3">
+          <p className={`text-sm font-medium ${isCorrect ? 'text-bonsai-green' : 'text-red-600'}`}>
+            {isCorrect ? 'Correct!' : 'Not quite — try again.'}
+          </p>
+          {isCorrect && activity.explanation && (
+            <p className="mt-1 text-sm text-bonsai-text-muted">{activity.explanation}</p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -186,7 +202,7 @@ export function ActivityCard({ activity }: { activity: Activity }) {
       )}
 
       {(activity.type === 'quiz' || activity.type === 'assessment') && (
-        <QuizBlock activity={activity} tone={tone} />
+        <QuizBlock activity={activity} />
       )}
 
       {activity.type === 'essay' && <OpenResponseBlock activity={activity} tone={tone} kind="essay" />}

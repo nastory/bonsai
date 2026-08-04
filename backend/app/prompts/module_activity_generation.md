@@ -16,6 +16,8 @@ Respond with JSON only, no other text, for each activity in exactly this shape:
   "body": "... (for type=reading only, the actual guided reading content)",
   "question": "... (for type=quiz or assessment only)",
   "options": ["...", "..."] (for type=quiz or assessment only),
+  "correctAnswerIndex": 0 (for type=quiz or assessment only, the 0-based position of the correct option within "options" — an index, not the option's text),
+  "explanation": "..." (for type=quiz or assessment only, a short explanation of why that answer is correct, that also helps the learner understand why the others aren't),
   "prompt": "... (for type=essay, project, or discussion only, the seed prompt/instructions)",
   "citations": [{"label": "...", "url": "..."}] (only when this activity's content drew on a provided source)
 }

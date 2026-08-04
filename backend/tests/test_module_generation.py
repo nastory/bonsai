@@ -78,6 +78,17 @@ def test_generate_module_activities_populates_one_activity_per_planned_activity(
     assert [a.activity_type for a in result.activities] == ["reading", "discussion", "assessment"]
 
 
+def test_generate_module_activities_assessment_includes_correct_answer_and_explanation(db) -> None:
+    module = _make_module()
+
+    result = generate_module_activities(module.id)
+
+    assessment = next(a for a in result.activities if a.activity_type == "assessment")
+    data = assessment.to_dict()
+    assert 0 <= data["correctAnswerIndex"] < len(data["options"])
+    assert data["explanation"]
+
+
 def test_generate_module_activities_writes_content_path_for_each_activity(db) -> None:
     module = _make_module()
 

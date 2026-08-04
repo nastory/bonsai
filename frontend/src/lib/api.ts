@@ -1,4 +1,11 @@
-import type { Course, InterviewStep, UserSettings, UserSettingsPatch } from '../types/course';
+import type {
+  Course,
+  DirectionChangeInterviewStep,
+  DirectionChangeProposal,
+  InterviewStep,
+  UserSettings,
+  UserSettingsPatch,
+} from '../types/course';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -50,10 +57,15 @@ export function deleteCourse(courseId: string): Promise<void> {
   return request<void>(`/courses/${courseId}`, { method: 'DELETE' });
 }
 
-export function startCourse(message: string, files: File[] = []): Promise<InterviewStep> {
+export function startCourse(
+  message: string,
+  files: File[] = [],
+  parentCourseId?: string,
+): Promise<InterviewStep> {
   const formData = new FormData();
   formData.append('message', message);
   files.forEach((file) => formData.append('files', file));
+  if (parentCourseId) formData.append('parentCourseId', parentCourseId);
   return request<InterviewStep>('/courses', {
     method: 'POST',
     body: formData,
@@ -91,4 +103,55 @@ export function approveOutline(courseId: string): Promise<Course> {
 
 export function generateModuleActivities(moduleId: string): Promise<Course> {
   return request<Course>(`/modules/${moduleId}/generate-activities`, { method: 'POST' });
+}
+
+export function startDirectionChange(moduleId: string, message: string): Promise<DirectionChangeInterviewStep> {
+  return request<DirectionChangeInterviewStep>(`/modules/${moduleId}/direction-interview`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
+export function submitDirectionChangeAnswer(
+  moduleId: string,
+  answer: string,
+): Promise<DirectionChangeInterviewStep> {
+  return request<DirectionChangeInterviewStep>(`/modules/${moduleId}/direction-interview-messages`, {
+    method: 'POST',
+    body: JSON.stringify({ answer }),
+  });
+}
+
+export function generateDirectionChangeOutline(moduleId: string): Promise<DirectionChangeProposal> {
+  return request<DirectionChangeProposal>(`/modules/${moduleId}/direction-outline`, { method: 'POST' });
+}
+
+export function submitDirectionChangeFeedback(
+  moduleId: string,
+  feedback: string,
+): Promise<DirectionChangeProposal> {
+  return request<DirectionChangeProposal>(`/modules/${moduleId}/direction-outline-feedback`, {
+    method: 'POST',
+    body: JSON.stringify({ feedback }),
+  });
+}
+
+export function approveDirectionChange(moduleId: string): Promise<Course> {
+  return request<Course>(`/modules/${moduleId}/direction-outline-approve`, { method: 'POST' });
+}
+
+// Bypasses request(): it always parses JSON, but an export archive is a
+// binary .zip download, not a JSON body.
+export async function exportData(): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/data/export`);
+  if (!response.ok) {
+    throw new Error(`GET /data/export failed: ${response.status}`);
+  }
+  return response.blob();
+}
+
+export function importData(file: File): Promise<void> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request<void>('/data/import', { method: 'POST', body: formData });
 }

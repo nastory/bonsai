@@ -127,9 +127,13 @@ export function Lesson() {
             setShowCompletionModal(false);
             goToNextModuleOrHome();
           }}
-          onChangeDirection={() => {
+          onBranchOff={() => {
             setShowCompletionModal(false);
-            goToNextModuleOrHome();
+            navigate('/create', { state: { parentCourseId: course.id } });
+          }}
+          onChangeThisCourse={() => {
+            setShowCompletionModal(false);
+            navigate(`/courses/${course.id}/modules/${module.id}/change-direction`);
           }}
         />
       )}

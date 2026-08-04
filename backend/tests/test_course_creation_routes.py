@@ -13,6 +13,28 @@ def test_start_course_returns_course_id_and_first_question(client, db) -> None:
     assert body["question"]
 
 
+def test_start_course_with_parent_course_id_sets_lineage(client, db) -> None:
+    parent = client.post("/api/courses", data={"message": "I want to learn GPU programming"}).get_json()
+
+    response = client.post(
+        "/api/courses",
+        data={"message": "I want to go deeper on memory coalescing", "parentCourseId": parent["courseId"]},
+    )
+
+    assert response.status_code == 201
+    course = client.get(f"/api/courses/{response.get_json()['courseId']}").get_json()
+    assert course["parentCourseId"] == parent["courseId"]
+
+
+def test_start_course_with_unknown_parent_course_id_returns_404(client, db) -> None:
+    response = client.post(
+        "/api/courses",
+        data={"message": "I want to go deeper", "parentCourseId": "does-not-exist"},
+    )
+
+    assert response.status_code == 404
+
+
 def test_start_course_with_an_attached_file_persists_a_source_material(client, db) -> None:
     response = client.post(
         "/api/courses",

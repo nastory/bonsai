@@ -30,7 +30,8 @@ def _interview_step_response(step) -> dict:
 def create_course() -> tuple[Response, int]:
     """Start a new course from the learner's initial description, optionally with attached documents.
 
-    Multipart form data: `message` (str), `files` (0+ file parts).
+    Multipart form data: `message` (str), `files` (0+ file parts), `parentCourseId`
+    (str, optional — a "Branch Off" mid-course: see start_course()).
 
     Returns:
         The new course's id, the first interview question, and any attached
@@ -38,8 +39,11 @@ def create_course() -> tuple[Response, int]:
     """
     message = request.form.get("message", "")
     files = request.files.getlist("files")
+    parent_course_id = request.form.get("parentCourseId") or None
     try:
-        step = start_course(message, files)
+        step = start_course(message, files, parent_course_id=parent_course_id)
+    except CourseNotFoundError:
+        abort(404, description=f"No course with id '{parent_course_id}'")
     except DocumentExtractionError as e:
         return jsonify({"error": str(e)}), 422
     except LLMOutputValidationError as e:

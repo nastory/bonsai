@@ -1,17 +1,16 @@
 import type { UserSettings } from '../types/course';
 
-type FeedbackKind = 'check' | 'quiz' | 'essay' | 'project' | 'discussion';
+type FeedbackKind = 'check' | 'essay' | 'project' | 'discussion';
 
 // Canned copy standing in for real LLM-generated feedback (Phase 1). Bonsai
 // never grades — this always reads as a response to think about, not a score.
+// Quizzes/assessments don't use this: they get a real per-question
+// correctAnswer/explanation from generation instead (see ActivityCard.tsx's
+// QuizBlock).
 const MESSAGES: Record<FeedbackKind, Record<UserSettings['feedbackTone'], string>> = {
   check: {
     encouraging: "Good instinct. That's exactly the kind of question worth sitting with as you keep going.",
     straightforward: "Worth revisiting once you've seen the next lesson if that wasn't immediately clear.",
-  },
-  quiz: {
-    encouraging: "Nice work reasoning through that. Keep that thought process going as the material gets trickier.",
-    straightforward: "Noted. There's no scoring here, just keep it in mind as you continue.",
   },
   essay: {
     encouraging: "Thanks for writing that out. You're making real connections here. Keep pushing on the parts that felt fuzzy.",

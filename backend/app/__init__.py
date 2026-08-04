@@ -10,6 +10,7 @@ from app.extensions import db, migrate
 from app.routes.activities import activities_bp
 from app.routes.course_creation import course_creation_bp
 from app.routes.courses import courses_bp
+from app.routes.data import data_bp
 from app.routes.health import health_bp
 from app.routes.modules import modules_bp
 from app.routes.settings import settings_bp
@@ -60,5 +61,6 @@ def create_app(test: bool = False, in_memory_db: bool = False) -> Flask:
     app.register_blueprint(activities_bp)
     app.register_blueprint(course_creation_bp)
     app.register_blueprint(modules_bp)
+    app.register_blueprint(data_bp)
 
     return app

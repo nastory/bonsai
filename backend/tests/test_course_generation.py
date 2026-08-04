@@ -58,6 +58,19 @@ def test_start_course_with_a_file_computes_an_interview_summary(db) -> None:
     assert step.course.source_materials[0].interview_summary == "[MOCK] Summary of the document."
 
 
+def test_start_course_with_parent_course_id_sets_lineage(db) -> None:
+    parent = start_course("I want to learn GPU programming").course
+
+    step = start_course("I want to go deeper on memory coalescing", parent_course_id=parent.id)
+
+    assert step.course.parent_course_id == parent.id
+
+
+def test_start_course_raises_for_unknown_parent_course_id(db) -> None:
+    with pytest.raises(CourseNotFoundError):
+        start_course("I want to go deeper", parent_course_id="does-not-exist")
+
+
 def test_start_course_with_an_unparseable_file_persists_nothing(db) -> None:
     file = FileStorage(stream=BytesIO(b"not a real docx"), filename="notes.docx")
 
@@ -172,6 +185,93 @@ def test_interview_sends_real_conversation_turns_not_flattened_text(real_llm_app
         assert second_call_messages[1] == {"role": "user", "content": "I want to learn GPU programming"}
         assert second_call_messages[2] == {"role": "assistant", "content": "What is your experience with GPUs?"}
         assert second_call_messages[3] == {"role": "user", "content": "I'm a total beginner"}
+
+
+def test_interview_prompt_includes_parent_context_when_branched(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        parent = Course(
+            id="parent-1",
+            title="GPU Programming",
+            description="d",
+            prerequisites=[],
+            estimated_timeline="4 weeks",
+            thumbnail_url="x",
+            stage="active",
+            context_summary={
+                "summary": "Covered GPU memory coalescing basics.",
+                "learnerProfile": "A beginner.",
+                "keyDecisions": [],
+            },
+        )
+        db.session.add(parent)
+        db.session.commit()
+
+        captured: dict = {}
+
+        def fake_completion(**kwargs):
+            captured["prompt"] = kwargs["messages"][0]["content"]
+            return _FakeResponse('{"done": false, "question": "a question"}')
+
+        monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+        start_course("I want to go deeper on this", parent_course_id="parent-1")
+
+        assert "Covered GPU memory coalescing basics." in captured["prompt"]
+
+
+def test_interview_prompt_omits_parent_context_when_not_branched(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        captured: dict = {}
+
+        def fake_completion(**kwargs):
+            captured["prompt"] = kwargs["messages"][0]["content"]
+            return _FakeResponse('{"done": false, "question": "a question"}')
+
+        monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+        start_course("I want to learn GPU programming")
+
+        assert "${" not in captured["prompt"]
+
+
+def test_outline_prompt_includes_parent_context_when_branched(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        parent = Course(
+            id="parent-1",
+            title="GPU Programming",
+            description="d",
+            prerequisites=[],
+            estimated_timeline="4 weeks",
+            thumbnail_url="x",
+            stage="active",
+            context_summary={
+                "summary": "Covered GPU memory coalescing basics.",
+                "learnerProfile": "A beginner.",
+                "keyDecisions": [],
+            },
+        )
+        db.session.add(parent)
+        db.session.commit()
+
+        monkeypatch.setattr(
+            "app.services.llm.litellm.completion",
+            lambda **kwargs: _FakeResponse('{"done": false, "question": "a question"}'),
+        )
+        step = start_course("I want to go deeper on this", parent_course_id="parent-1")
+
+        captured: dict = {}
+
+        def fake_completion(**kwargs):
+            captured["prompt"] = kwargs["messages"][0]["content"]
+            return _FakeResponse(
+                '{"title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week", "modules": []}'
+            )
+
+        monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+        generate_outline(step.course.id)
+
+        assert "Covered GPU memory coalescing basics." in captured["prompt"]
 
 
 def test_outline_prompt_includes_source_material_text(real_llm_app, monkeypatch) -> None:

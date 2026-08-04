@@ -2,7 +2,24 @@
 
 An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
 
-**Status:** Phase 1 (in progress). Creating a course, running the interview, generating and revising an outline, and approving it are all real now, backed by the LLM (mocked in test mode), not a scripted Phase 0 flow, and generation actually respects whatever provider/model you've configured in Settings, hosted or a local Ollama model, verified against a real running Ollama instance. A module's actual lesson content (readings, quizzes, essays, discussions, projects) now generates the first time a learner reaches it, also verified against real Ollama. When a Tavily API key is configured, module generation routes through a retrieval agent that searches and fetches real web pages in an iterative loop before writing content, attaching citations to what it generates; built and fully tested against mocked calls, with live Tavily verification still pending. Completing a lesson activity persists too, and a learner can jump to any already-generated lesson freely, in any order — only content that hasn't been generated yet is locked, matching Bonsai's self-directed premise rather than forcing a fixed sequence through content that already exists. Every LLM response is validated against an explicit schema before it touches the database, so a malformed model response fails clearly (a 502) instead of corrupting data or crashing with a confusing error. Settings covers hosted/BYOM model names, an embedding model (still unused, since semantic search isn't built), and the Tavily key. What's still ahead: changing direction mid-course, document ingestion, and AI evals (automated quality grading for generated content, see `design.md`'s Roadmap section).
+**Status:** Phase 1 (complete). The full core loop is real, backed by the LLM (mocked in test mode) and
+verified against a real running Ollama instance end to end, not a scripted Phase 0 flow: course creation
+(interview -> outline -> revision -> approval, optionally grounded in an uploaded document, or "branched
+off" from a course the learner already worked through), incremental per-module lesson generation the
+first time a learner reaches it (readings, quizzes/assessments with a real correct answer + explanation,
+essays, projects, discussions — retrieval-grounded with citations when a Tavily key is configured),
+mid-course "change direction" (a fresh check-in interview that either replaces what's ahead in the same
+course or branches into a new one, leaving everything already completed untouched), and full data
+export/import as a portable `.zip` archive (courses, progress, and settings, deliberately excluding API
+keys). Every LLM response is schema-validated before it touches the database, and every generation call
+is constrained to that schema at the decoding level too (Ollama's structured output, OpenAI's Structured
+Outputs, Anthropic's forced-tool-call translation), not just checked after the fact — a malformed or
+off-shape model response fails clearly (a 502) instead of corrupting data or silently stalling. Settings
+covers hosted/BYOM model + endpoint configuration, an embedding model (unused so far — semantic search is
+Phase 3), and the Tavily key. What's ahead is Phase 2 (rich media, in-course visual aids via retrieval,
+"keep going/branch off" from a *completed* course, BYOM refinement, weekly learning-objective goals) and
+Phase 3 (polish, semantic search, community readiness) — see `bonsai_prd.md`'s Milestones and `design.md`'s
+Roadmap sections.
 
 ## Motivation
 I love continuous learning, but I get tired of having to search through sites like Udemy or Coursera looking for courses, not finding exactly what I need, and then paying for a course that only loosely lines up with what I actually want to learn.
@@ -29,9 +46,9 @@ Recently, I've been on a bonsai kick on TikTok. The meditative patience that goe
 
 ```
 bonsai/
-├── docs/               # idea doc, mockup, feedback docs
+├── docs/               # idea doc, mockup, feedback docs, course-creation flow design notes
 ├── bonsai_prd.md       # product requirements document
-├── design.md           # design document (Phase 0, plus a Phase 1 section)
+├── design.md           # design document: Phase 0, plus a build-slice-by-build-slice Phase 1 section
 ├── docker-compose.yml  # runs frontend + backend together, each in its own container
 ├── frontend/           # React + TypeScript + Vite + Tailwind SPA
 │   └── Dockerfile
@@ -41,16 +58,21 @@ bonsai/
     │   ├── models.py            # Course, Module, Activity, SourceMaterial, UserSettings, ConversationMessage
     │   ├── prompts/              # LLM prompts as markdown files, kept out of code for clean versioning
     │   ├── services/
-    │   │   ├── llm.py            # LiteLLM wrapper, mocked in test mode
-    │   │   ├── llm_schemas.py    # Pydantic schemas validating LLM JSON output
-    │   │   ├── model_selection.py    # UserSettings -> model/api_key/api_base for complete()
-    │   │   ├── prompts.py        # loads app/prompts/*.md, fills in ${variables}
-    │   │   ├── content_storage.py    # saves/loads an activity's generated content to/from disk
-    │   │   ├── retrieval.py          # Tavily web search + page fetch, mocked in test mode
-    │   │   ├── retrieval_agent.py    # search/fetch/evaluate tool-calling loop
-    │   │   ├── course_generation.py  # interview -> outline -> approve
-    │   │   └── module_generation.py  # generates a module's activities on demand, retrieval-grounded if a Tavily key is set
-    │   └── routes/               # health, courses, settings, activities, course_creation, modules
+    │   │   ├── llm.py                     # LiteLLM wrapper: schema-constrained decoding, mocked in test mode
+    │   │   ├── llm_schemas.py             # Pydantic schemas validating (and shaping) LLM JSON output
+    │   │   ├── model_selection.py         # UserSettings -> model/api_key/api_base for complete()
+    │   │   ├── prompts.py                 # loads app/prompts/*.md, fills in ${variables}
+    │   │   ├── content_storage.py         # saves/loads an activity's generated content to/from disk
+    │   │   ├── source_material_storage.py # saves/loads an uploaded document's extracted text
+    │   │   ├── document_extraction.py     # .txt/.docx/.pdf -> plain text, for course-grounding uploads
+    │   │   ├── retrieval.py               # Tavily web search + page fetch, mocked in test mode
+    │   │   ├── retrieval_agent.py         # unused model-driven tool-calling loop, kept for a possible future Q&A feature
+    │   │   ├── course_context.py          # compacted course memory + real conversation-turn assembly, shared by every prompt
+    │   │   ├── course_generation.py       # interview -> outline -> approve; deletion; "Branch Off"/"Change This Course"
+    │   │   ├── module_generation.py       # generates a module's activities on demand, sequentially, retrieval- or document-grounded
+    │   │   ├── module_retrieval.py        # deliberate per-activity search planning + retrieval before any content is written
+    │   │   └── data_export.py             # full-data export/import as a portable .zip archive
+    │   └── routes/               # health, courses, settings, activities, course_creation, modules, data
     ├── migrations/          # Flask-Migrate / Alembic schema migrations
     └── tests/               # pytest suite
 ```
@@ -95,7 +117,7 @@ python seed.py                # inserts example courses if the database is empty
 python run.py
 ```
 
-By default this makes real LiteLLM calls, which needs a provider API key configured (there's no Settings-to-backend wiring for that yet). To run without one, and avoid API costs entirely during development, use test mode instead, which returns canned responses for every LLM call while still using your real, persistent database:
+By default this makes real LiteLLM calls, which needs a provider API key configured through Settings (or a local Ollama endpoint for BYOM — see the Prerequisites section above for the minimum Ollama version). To run without one, and avoid API costs entirely during development, use test mode instead, which returns canned responses for every LLM call while still using your real, persistent database:
 
 ```
 BONSAI_TEST_MODE=true python run.py
@@ -119,10 +141,29 @@ curl -X POST http://localhost:5000/api/activities/<activity-id>/complete
 curl -X POST http://localhost:5000/api/courses -d '{"message": "I want to learn woodworking"}'
 # {"courseId": "...", "done": false, "question": "..."}
 # then POST .../interview-messages, .../generate-outline, .../outline-feedback, .../approve-outline
+# (add a "parentCourseId" field to any of these to "Branch Off" from another course instead of
+# starting fresh — the interview/outline are then shaped by what that course already covered)
+
+curl -X DELETE http://localhost:5000/api/courses/<course-id>
+# deletes the course and everything generated in it, including its on-disk content files
 
 curl -X POST http://localhost:5000/api/modules/<module-id>/generate-activities
 # the full parent course, with that module's activities generated (idempotent: a
 # module that already has activities is returned unchanged)
+
+curl -X POST http://localhost:5000/api/modules/<module-id>/direction-interview -d '{"message": "..."}'
+# {"done": false, "question": "..."}, the "Change This Course" mid-course check-in — same shape as
+# course creation's interview, then POST .../direction-interview-messages, .../direction-outline,
+# .../direction-outline-feedback, .../direction-outline-approve (replaces everything not yet reached
+# in this same course; nothing already completed is touched)
+
+curl http://localhost:5000/api/data/export -o bonsai-export.zip
+# a portable archive: every course/module/activity/source-material/settings row plus their on-disk
+# content files, as JSON + the real files, zipped together. API keys are never included.
+
+curl -X POST http://localhost:5000/api/data/import -F file=@bonsai-export.zip
+# restores from a previously exported archive — replaces all current courses/progress with what's in
+# the archive; API keys already configured on this installation are left untouched
 ```
 
 ## Running the backend tests

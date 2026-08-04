@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Info, FileText, Shield, ScrollText, Pencil, Download, Upload } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
+import { ApiError, exportData, importData } from '../../lib/api';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
@@ -18,13 +19,14 @@ const INFO_LINKS = [
 type DialogStep = 'idle' | 'confirm' | 'notice';
 
 export function UserMenu() {
-  const { user, updateUserSettings } = useAppData();
+  const { user, updateUserSettings, refreshCourses } = useAppData();
   const [open, setOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(user.name);
   const [exportStep, setExportStep] = useState<DialogStep>('idle');
+  const [exportMessage, setExportMessage] = useState('');
   const [importStep, setImportStep] = useState<DialogStep>('idle');
-  const [importedFileName, setImportedFileName] = useState<string | null>(null);
+  const [importMessage, setImportMessage] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -59,6 +61,41 @@ export function UserMenu() {
     setOpen(false);
   };
 
+  const handleExport = async () => {
+    try {
+      const blob = await exportData();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'bonsai-export.zip';
+      link.click();
+      URL.revokeObjectURL(url);
+      setExportMessage('Your data has been downloaded as bonsai-export.zip.');
+    } catch (err) {
+      console.error('Failed to export data:', err);
+      setExportMessage('Something went wrong exporting your data. Please try again.');
+    } finally {
+      setExportStep('notice');
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    try {
+      await importData(file);
+      await refreshCourses();
+      setImportMessage(
+        'Your data has been restored. API keys already configured on this installation were left as they were — set them in Settings if this is a new installation.',
+      );
+    } catch (err) {
+      console.error('Failed to import data:', err);
+      setImportMessage(
+        err instanceof ApiError ? err.message : 'Something went wrong importing your data. Please try again.',
+      );
+    } finally {
+      setImportStep('notice');
+    }
+  };
+
   return (
     <div ref={containerRef} className="relative">
       <input
@@ -69,8 +106,7 @@ export function UserMenu() {
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) {
-            setImportedFileName(file.name);
-            setImportStep('notice');
+            handleImportFile(file);
           }
           e.target.value = '';
         }}
@@ -156,21 +192,17 @@ export function UserMenu() {
           description="This will package your course outlines, module content, progress, and settings into a downloadable archive. API keys and other credentials are never included."
           confirmLabel="Export"
           onCancel={() => setExportStep('idle')}
-          onConfirm={() => setExportStep('notice')}
+          onConfirm={handleExport}
         />
       )}
       {exportStep === 'notice' && (
-        <NoticeDialog
-          title="Export Your Data"
-          message="Not wired up yet. Phase 1 will let you download your data as an archive."
-          onClose={() => setExportStep('idle')}
-        />
+        <NoticeDialog title="Export Your Data" message={exportMessage} onClose={() => setExportStep('idle')} />
       )}
 
       {importStep === 'confirm' && (
         <ConfirmDialog
           title="Import Your Data"
-          description="Select a Bonsai export archive (.zip) to restore your courses, progress, and settings on this installation. API keys aren't included in exports, so you'll need to re-enter those afterward."
+          description="Select a Bonsai export archive (.zip) to restore. This replaces everything currently in this installation — all existing courses and progress — with what's in the archive. API keys aren't included in exports and won't be affected."
           confirmLabel="Choose File"
           onCancel={() => setImportStep('idle')}
           onConfirm={() => {
@@ -180,14 +212,7 @@ export function UserMenu() {
         />
       )}
       {importStep === 'notice' && (
-        <NoticeDialog
-          title="Import Your Data"
-          message={`Not wired up yet. Phase 1 will let you restore your data from "${importedFileName}".`}
-          onClose={() => {
-            setImportStep('idle');
-            setImportedFileName(null);
-          }}
-        />
+        <NoticeDialog title="Import Your Data" message={importMessage} onClose={() => setImportStep('idle')} />
       )}
     </div>
   );

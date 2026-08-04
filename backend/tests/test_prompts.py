@@ -17,6 +17,7 @@ def test_load_prompt_substitutes_variables() -> None:
         questions_asked=3,
         max_questions=10,
         source_materials="",
+        parent_context="",
     )
 
     assert "3" in text

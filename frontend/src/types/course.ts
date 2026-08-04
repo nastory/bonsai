@@ -32,6 +32,9 @@ export interface Activity {
   /** Quiz-specific fields. */
   question?: string;
   options?: string[];
+  /** Which of "options" is correct (by index), and why — quiz/assessment only. */
+  correctAnswerIndex?: number;
+  explanation?: string;
   /** Essay/project/discussion seed prompt. */
   prompt?: string;
   /** True when this activity is a capstone/practicum-style project. */
@@ -68,6 +71,8 @@ export interface Course {
   thumbnailUrl: string;
   progressPercent: number;
   stage: CourseStage;
+  /** Set when this course was created via "Branch Off" from another course. */
+  parentCourseId?: string | null;
   modules: Module[];
   /** Present only for courses created from uploaded documents rather than a typed topic. */
   sourceMaterials?: SourceMaterial[];
@@ -80,6 +85,33 @@ export interface InterviewStep {
   question: string | null;
   /** The course's full accumulated source materials, not just any attached this turn. */
   sourceMaterials: SourceMaterial[];
+}
+
+/** The result of starting or answering into a mid-course "Change This Course" check-in interview. */
+export interface DirectionChangeInterviewStep {
+  done: boolean;
+  question: string | null;
+}
+
+/** One activity within a DirectionChangeProposal module — planned only, no content yet. */
+export interface PlannedActivity {
+  type: ActivityType;
+  title: string;
+  plan: string;
+}
+
+/** One proposed module within a DirectionChangeProposal — not yet real, no id/status until approved. */
+export interface PlannedModule {
+  title: string;
+  description: string;
+  estimatedTimeline: string;
+  learningOutcomes: string[];
+  plannedActivities: PlannedActivity[];
+}
+
+/** A proposed replacement for everything ahead of a module, pending review/approval. */
+export interface DirectionChangeProposal {
+  modules: PlannedModule[];
 }
 
 export interface ModelProviderSettings {

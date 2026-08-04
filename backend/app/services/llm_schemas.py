@@ -77,6 +77,18 @@ class CourseOutlineSchema(BaseModel):
     modules: list[CourseModuleSchema]
 
 
+class CourseDirectionChangeSchema(BaseModel):
+    """Expected shape of a module_direction_outline.md response.
+
+    Unlike CourseOutlineSchema, this only proposes modules — a mid-course
+    "change direction" replaces what's ahead in an already-active course
+    (see course_generation.py's approve_direction_change()), not the
+    course's own title/description/prerequisites, which stay as they are.
+    """
+
+    modules: list[CourseModuleSchema]
+
+
 class CourseContextSchema(BaseModel):
     """Expected shape of a course_context_compaction.md response.
 
@@ -133,11 +145,85 @@ class GeneratedActivitySchema(BaseModel):
     body: str | None = None
     question: str | None = None
     options: list[str] | None = None
+    # Quiz/assessment-only: which of "options" is correct (by position, not
+    # by repeating its text — see GeneratedQuizActivityDecodingSchema's
+    # docstring for why an index instead of a string), and why. Required for
+    # those two types (see the validator below) so the learner can actually
+    # be told whether they got it right, not just given a generic "noted"
+    # message — feedback-only per the PRD still means real feedback, not
+    # scoring.
+    correctAnswerIndex: int | None = None
+    explanation: str | None = None
     prompt: str | None = None
     # Populated when this activity's content drew on a retrieved search
     # result (see module_retrieval.py); None when it didn't (no search
     # results for this activity, or no Tavily key configured).
     citations: list[CitationSchema] | None = None
+
+    @model_validator(mode="after")
+    def _quiz_and_assessment_require_a_checkable_answer(self) -> "GeneratedActivitySchema":
+        """Reject a quiz/assessment with no way to tell the learner if they got it right.
+
+        `correctAnswerIndex` must be a valid index into `options` — a
+        missing or out-of-range index means the frontend has no correct
+        option to check against, and `explanation` covers the "why," not
+        just the "what."
+        """
+        if self.type in ("quiz", "assessment"):
+            if self.correctAnswerIndex is None:
+                raise ValueError('"correctAnswerIndex" is required for type=quiz/assessment')
+            if not self.options or not (0 <= self.correctAnswerIndex < len(self.options)):
+                raise ValueError('"correctAnswerIndex" must be a valid index into "options"')
+            if not (self.explanation and self.explanation.strip()):
+                raise ValueError('"explanation" is required for type=quiz/assessment')
+        return self
+
+
+class GeneratedQuizActivityDecodingSchema(BaseModel):
+    """Decoding-only shape for a quiz/assessment generation call — NOT a parsing target.
+
+    llm.py's complete() uses a schema's model_json_schema() to constrain the
+    model's raw decoding (Ollama's native structured output, OpenAI's
+    Structured Outputs, Anthropic's forced-tool-call translation — see
+    complete()'s docstring). GeneratedActivitySchema can't be that schema for
+    a quiz/assessment call: correctAnswerIndex/explanation are Optional
+    there (they don't apply to every activity type sharing that one class),
+    so the exported JSON schema doesn't mark them "required" — confirmed
+    against real Ollama/llama3 that a model left free to omit an optional
+    field often does, especially the last one or two: explanation was
+    silently dropped in 2 of 3 trials, only caught after the fact by
+    GeneratedActivitySchema's validator turning it into a request failure
+    instead of a generation that just didn't have the gap to begin with.
+
+    Also why this asks for an *index* into options rather than repeating the
+    correct option's text: a plain JSON Schema string field has no way to
+    express "must equal one of these other array values" (that's a
+    cross-field constraint, which JSON Schema can't encode), so even with
+    correctAnswer marked required, nothing stops the model from paraphrasing
+    or lightly rewording the option instead of copying it verbatim —
+    confirmed against real Ollama/llama3: required alone dropped the
+    explanation-missing failures to 0/6, but a text correctAnswer still
+    failed to exactly match any option in 3 of those 6. An index is a small
+    integer already validated in-range by the schema's own type/bounds
+    (see the validator on GeneratedActivitySchema), so there's no string to
+    get slightly wrong.
+
+    module_generation.py's _generate_activities_content() passes this
+    instead, only for schema=, only when the planned activity's type is
+    quiz/assessment — the response returned is still parsed and validated
+    against GeneratedActivitySchema as normal, since that's what needs to
+    handle every activity type's actual shape (title/estimatedMinutes/type
+    duplicated here only so a real JSON schema can be exported; not meant
+    to be instantiated).
+    """
+
+    type: Literal["quiz", "assessment"]
+    title: str
+    estimatedMinutes: int
+    question: str
+    options: list[str]
+    correctAnswerIndex: int
+    explanation: str
 
 
 class ModuleDigestSchema(BaseModel):

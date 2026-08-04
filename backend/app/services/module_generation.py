@@ -37,7 +37,13 @@ from app.models import Activity, ConversationMessage, Module, UserSettings
 from app.services.content_storage import save_activity_content
 from app.services.course_context import assemble_learning_history, render_source_materials
 from app.services.llm import complete
-from app.services.llm_schemas import CitationSchema, GeneratedActivitySchema, ModuleDigestSchema, validate_llm_json
+from app.services.llm_schemas import (
+    CitationSchema,
+    GeneratedActivitySchema,
+    GeneratedQuizActivityDecodingSchema,
+    ModuleDigestSchema,
+    validate_llm_json,
+)
 from app.services.model_selection import resolve_model_config
 from app.services.module_retrieval import plan_activity_searches, retrieve_for_module
 from app.services.prompts import load_prompt
@@ -129,7 +135,17 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
     for i, planned in enumerate(module.activity_plan):
         turn = _activity_turn_message(i, module.activity_plan, planned, search_results.get(i, []))
         messages.append({"role": "user", "content": turn})
-        raw = complete(messages=messages, schema=GeneratedActivitySchema, **model_config)
+        # Quiz/assessment calls get a stricter decoding-only schema (with
+        # correctAnswerIndex/explanation genuinely required, not Optional as
+        # they are on GeneratedActivitySchema, which every other activity
+        # type also shares) — see GeneratedQuizActivityDecodingSchema's
+        # docstring for why this actually matters, not just belt-and-suspenders.
+        decoding_schema = (
+            GeneratedQuizActivityDecodingSchema
+            if planned["type"] in ("quiz", "assessment")
+            else GeneratedActivitySchema
+        )
+        raw = complete(messages=messages, schema=decoding_schema, **model_config)
         generated.append(validate_llm_json(raw, GeneratedActivitySchema))
         messages.append({"role": "assistant", "content": raw})
 
@@ -239,4 +255,6 @@ def _mock_activity(planned: dict) -> GeneratedActivitySchema:
         estimatedMinutes=10,
         question=f"[MOCK] Check: {planned['plan']}",
         options=["[MOCK] Option A", "[MOCK] Option B"],
+        correctAnswerIndex=0,
+        explanation="[MOCK] Explanation of why this is correct.",
     )

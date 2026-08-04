@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Loader2, Paperclip, X } from 'lucide-react';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { Card } from '../components/ui/Card';
@@ -12,18 +12,27 @@ interface Message {
   text: string;
 }
 
+interface CreateCourseLocationState {
+  /** Set when arriving here via "Branch Off" from a module-completion check-in. */
+  parentCourseId?: string;
+}
+
 // Matches the backend's MAX_INTERVIEW_QUESTIONS (app/services/course_generation.py).
 // Not shared code between frontend/backend yet, just kept in sync by hand.
 const MAX_QUESTIONS = 10;
 
 export function CreateCourse() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const parentCourseId = (location.state as CreateCourseLocationState | null)?.parentCourseId;
   const [courseId, setCourseId] = useState<string | null>(null);
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     {
       from: 'bonsai',
-      text: "What would you like to learn? Be as specific or broad as you like, or attach a document (a paper, an article) and I'll build a course around it.",
+      text: parentCourseId
+        ? "What would you like to explore next, building on what you've already covered? Be as specific or broad as you like."
+        : "What would you like to learn? Be as specific or broad as you like, or attach a document (a paper, an article) and I'll build a course around it.",
     },
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -67,7 +76,7 @@ export function CreateCourse() {
     try {
       const step = courseId
         ? await submitInterviewAnswer(courseId, text, filesToSend)
-        : await startCourse(text, filesToSend);
+        : await startCourse(text, filesToSend, parentCourseId);
       if (!courseId) setCourseId(step.courseId);
       setQuestionsAnswered((n) => n + 1);
       setAttachedFiles([]);
@@ -101,7 +110,9 @@ export function CreateCourse() {
 
   return (
     <div className="mx-auto flex h-screen max-w-3xl flex-col px-8 py-10">
-      <h1 className="mb-6 text-2xl font-semibold text-bonsai-text">New Course</h1>
+      <h1 className="mb-6 text-2xl font-semibold text-bonsai-text">
+        {parentCourseId ? 'Branch Off' : 'New Course'}
+      </h1>
 
       <div className="flex-1 space-y-4 overflow-y-auto">
         {messages.map((message, i) => (

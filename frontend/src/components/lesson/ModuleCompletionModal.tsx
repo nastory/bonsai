@@ -1,23 +1,20 @@
-import { useState } from 'react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
 import logo from '../../assets/logo.svg';
 
 interface ModuleCompletionModalProps {
   moduleTitle: string;
   onKeepGoing: () => void;
-  onChangeDirection: (feedback: string) => void;
+  onBranchOff: () => void;
+  onChangeThisCourse: () => void;
 }
 
 export function ModuleCompletionModal({
   moduleTitle,
   onKeepGoing,
-  onChangeDirection,
+  onBranchOff,
+  onChangeThisCourse,
 }: ModuleCompletionModalProps) {
-  const [changingDirection, setChangingDirection] = useState(false);
-  const [feedback, setFeedback] = useState('');
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
       <Card className="w-full max-w-md">
@@ -31,33 +28,20 @@ export function ModuleCompletionModal({
           </div>
         </div>
 
-        {!changingDirection ? (
-          <div className="mt-5 flex flex-col gap-2">
-            <Button onClick={onKeepGoing}>Keep going as planned</Button>
-            <Button variant="secondary" onClick={() => setChangingDirection(true)}>
-              I'd like to change directions...
-            </Button>
-          </div>
-        ) : (
-          <form
-            className="mt-5 flex flex-col gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!feedback.trim()) return;
-              onChangeDirection(feedback);
-            }}
-          >
-            <Input
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              placeholder="What would you like to focus on instead?"
-              autoFocus
-            />
-            <Button type="submit" disabled={!feedback.trim()}>
-              Update remaining modules
-            </Button>
-          </form>
-        )}
+        <div className="mt-5 flex flex-col gap-2">
+          <Button onClick={onKeepGoing}>Keep going as planned</Button>
+          <Button variant="secondary" onClick={onBranchOff}>
+            Branch off into a new course
+          </Button>
+          <Button variant="secondary" onClick={onChangeThisCourse}>
+            Change this course
+          </Button>
+        </div>
+        <p className="mt-3 text-xs text-bonsai-text-muted">
+          Branching off starts a new course from here, keeping this one exactly as it is. Changing this
+          course replaces what's ahead in this same course — what you've already finished stays intact
+          either way.
+        </p>
       </Card>
     </div>
   );
