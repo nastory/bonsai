@@ -43,6 +43,8 @@ def test_create_course_with_modules_and_activities(db) -> None:
     assert fetched.modules[0].title == "GPU Architecture Fundamentals"
     assert len(fetched.modules[0].activities) == 1
     assert fetched.modules[0].activities[0].title == "What Is a GPU, Really?"
+    assert fetched.modules[0].activities[0].completed_at is None
+    assert fetched.thumbnail_image_path is None
 
 
 def test_module_activity_plan_defaults_to_empty_list(db) -> None:

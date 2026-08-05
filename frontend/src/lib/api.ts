@@ -61,11 +61,13 @@ export function startCourse(
   message: string,
   files: File[] = [],
   parentCourseId?: string,
+  supplementWithWebSearch?: boolean,
 ): Promise<InterviewStep> {
   const formData = new FormData();
   formData.append('message', message);
   files.forEach((file) => formData.append('files', file));
   if (parentCourseId) formData.append('parentCourseId', parentCourseId);
+  if (supplementWithWebSearch) formData.append('supplementWithWebSearch', 'true');
   return request<InterviewStep>('/courses', {
     method: 'POST',
     body: formData,
@@ -76,10 +78,12 @@ export function submitInterviewAnswer(
   courseId: string,
   answer: string,
   files: File[] = [],
+  supplementWithWebSearch?: boolean,
 ): Promise<InterviewStep> {
   const formData = new FormData();
   formData.append('answer', answer);
   files.forEach((file) => formData.append('files', file));
+  if (supplementWithWebSearch) formData.append('supplementWithWebSearch', 'true');
   return request<InterviewStep>(`/courses/${courseId}/interview-messages`, {
     method: 'POST',
     body: formData,

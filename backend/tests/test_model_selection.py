@@ -3,7 +3,13 @@
 import pytest
 
 from app.models import UserSettings
-from app.services.model_selection import EmbeddingNotConfiguredError, resolve_embedding_config, resolve_model_config
+from app.services.model_selection import (
+    EmbeddingNotConfiguredError,
+    ImageGenerationNotConfiguredError,
+    resolve_embedding_config,
+    resolve_image_generation_config,
+    resolve_model_config,
+)
 
 
 def test_resolve_model_config_defaults_to_anthropic_when_nothing_configured(db) -> None:
@@ -121,3 +127,60 @@ def test_resolve_embedding_config_hosted_uses_dedicated_key_when_not_reusing_cre
         config = resolve_embedding_config()
 
     assert config["api_key"] == "sk-embedding"
+
+
+def test_resolve_image_generation_config_defaults_to_a_mock_model_in_test_mode(db) -> None:
+    UserSettings.get_or_create()
+
+    config = resolve_image_generation_config()
+
+    assert config["model"]
+
+
+def test_resolve_image_generation_config_raises_when_not_configured(real_llm_app) -> None:
+    with real_llm_app.app_context():
+        UserSettings.get_or_create()
+
+        with pytest.raises(ImageGenerationNotConfiguredError):
+            resolve_image_generation_config()
+
+
+def test_resolve_image_generation_config_byom_uses_ollama_prefix_and_completion_endpoint(real_llm_app) -> None:
+    with real_llm_app.app_context():
+        settings = UserSettings.get_or_create()
+        settings.model_provider_tier = "byom"
+        settings.model_provider_byom_endpoint = "http://localhost:11434"
+        settings.image_generation_model = "some-image-model"
+
+        config = resolve_image_generation_config()
+
+    assert config["model"] == "ollama/some-image-model"
+    assert config["api_base"] == "http://localhost:11434"
+    assert "api_key" not in config
+
+
+def test_resolve_image_generation_config_hosted_reuses_completion_credentials_by_default(real_llm_app) -> None:
+    with real_llm_app.app_context():
+        settings = UserSettings.get_or_create()
+        settings.model_provider_tier = "hosted"
+        settings.model_provider_api_key = "sk-completion"
+        settings.image_generation_model = "dall-e-3"
+
+        config = resolve_image_generation_config()
+
+    assert config["model"] == "dall-e-3"
+    assert config["api_key"] == "sk-completion"
+
+
+def test_resolve_image_generation_config_hosted_uses_dedicated_key_when_not_reusing_credentials(real_llm_app) -> None:
+    with real_llm_app.app_context():
+        settings = UserSettings.get_or_create()
+        settings.model_provider_tier = "hosted"
+        settings.model_provider_api_key = "sk-completion"
+        settings.image_generation_model = "dall-e-3"
+        settings.image_generation_use_completion_credentials = False
+        settings.image_generation_api_key = "sk-image"
+
+        config = resolve_image_generation_config()
+
+    assert config["api_key"] == "sk-image"

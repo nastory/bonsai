@@ -32,7 +32,8 @@ def create_course() -> tuple[Response, int]:
     """Start a new course from the learner's initial description, optionally with attached documents.
 
     Multipart form data: `message` (str), `files` (0+ file parts), `parentCourseId`
-    (str, optional — a "Branch Off" mid-course: see start_course()).
+    (str, optional — a "Branch Off" mid-course: see start_course()),
+    `supplementWithWebSearch` (str "true"/"false", optional — see start_course()).
 
     Returns:
         The new course's id, the first interview question, and any attached
@@ -41,8 +42,11 @@ def create_course() -> tuple[Response, int]:
     message = request.form.get("message", "")
     files = request.files.getlist("files")
     parent_course_id = request.form.get("parentCourseId") or None
+    supplement_with_web_search = request.form.get("supplementWithWebSearch", "").lower() == "true"
     try:
-        step = start_course(message, files, parent_course_id=parent_course_id)
+        step = start_course(
+            message, files, parent_course_id=parent_course_id, supplement_with_web_search=supplement_with_web_search
+        )
     except CourseNotFoundError:
         abort(404, description=f"No course with id '{parent_course_id}'")
     except DocumentExtractionError as e:
@@ -61,15 +65,20 @@ def post_interview_answer(course_id: str) -> Response:
     Args:
         course_id: The course's id.
 
-    Multipart form data: `answer` (str), `files` (0+ file parts).
+    Multipart form data: `answer` (str), `files` (0+ file parts),
+    `supplementWithWebSearch` (str "true"/"false", optional — see
+    course_generation.py's submit_interview_answer()).
 
     Returns:
         The next interview question, or done=True once there are enough answers.
     """
     answer = request.form.get("answer", "")
     files = request.files.getlist("files")
+    supplement_with_web_search = request.form.get("supplementWithWebSearch", "").lower() == "true"
     try:
-        step = submit_interview_answer(course_id, answer, files)
+        step = submit_interview_answer(
+            course_id, answer, files, supplement_with_web_search=supplement_with_web_search
+        )
     except CourseNotFoundError:
         abort(404, description=f"No course with id '{course_id}'")
     except DocumentExtractionError as e:

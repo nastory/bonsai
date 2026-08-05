@@ -7,7 +7,8 @@ interface ModuleCompletionModalProps {
   moduleTitle: string;
   onKeepGoing: () => void;
   onBranchOff: () => void;
-  onChangeThisCourse: () => void;
+  /** Omitted when the just-finished module was the course's last one — there's nothing ahead to change. */
+  onChangeThisCourse?: () => void;
 }
 
 export function ModuleCompletionModal({
@@ -36,14 +37,16 @@ export function ModuleCompletionModal({
           <Button variant="secondary" onClick={onBranchOff}>
             Branch off into a new course
           </Button>
-          <Button variant="secondary" onClick={onChangeThisCourse}>
-            Change this course
-          </Button>
+          {onChangeThisCourse && (
+            <Button variant="secondary" onClick={onChangeThisCourse}>
+              Change this course
+            </Button>
+          )}
         </div>
         <p className="mt-3 text-xs text-bonsai-text-muted">
-          Branching off starts a new course from here, keeping this one exactly as it is. Changing this
-          course replaces what's ahead in this same course — what you've already finished stays intact
-          either way.
+          {onChangeThisCourse
+            ? "Branching off starts a new course from here, keeping this one exactly as it is. Changing this course replaces what's ahead in this same course — what you've already finished stays intact either way."
+            : "That was the last module. Branching off starts a new course from here, keeping this one exactly as it is."}
         </p>
       </Card>
     </div>

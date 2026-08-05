@@ -16,8 +16,12 @@ const DEFAULT_USER: UserSettings = {
   modelProvider: { tier: 'hosted', hasApiKey: false },
   embeddingUseCompletionCredentials: true,
   hasEmbeddingApiKey: false,
+  imageGenerationUseCompletionCredentials: true,
+  hasImageGenerationApiKey: false,
   hasTavilyApiKey: false,
   deepSearchEnabled: false,
+  visualAidsEnabled: false,
+  weeklyGoalActivities: null,
 };
 
 interface AppDataContextValue {

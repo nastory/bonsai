@@ -5,6 +5,8 @@ module-completion cascade that used to live only in the frontend now lives
 here, so progress survives a refresh.
 """
 
+from datetime import datetime
+
 from flask import Blueprint, abort, jsonify
 from flask.wrappers import Response
 
@@ -35,6 +37,7 @@ def complete_activity(activity_id: str) -> Response:
         abort(404, description=f"No activity with id '{activity_id}'")
 
     activity.status = "completed"
+    activity.completed_at = datetime.utcnow()
 
     module = activity.module
     if all(a.status == "completed" for a in module.activities):
@@ -42,8 +45,11 @@ def complete_activity(activity_id: str) -> Response:
 
         course = module.course
         next_module = next((m for m in course.modules if m.position == module.position + 1), None)
-        if next_module is not None and next_module.status == "locked":
-            next_module.status = "in_progress"
+        if next_module is not None:
+            if next_module.status == "locked":
+                next_module.status = "in_progress"
+        else:
+            course.stage = "completed"
 
     db.session.commit()
 

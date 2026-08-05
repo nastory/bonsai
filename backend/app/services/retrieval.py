@@ -93,3 +93,50 @@ def fetch_page(url: str, api_key: str) -> dict:
     if not results:
         raise RetrievalError(f"Tavily returned no content for {url}")
     return {"url": url, "content": results[0].get("raw_content", "")}
+
+
+def image_search(query: str, api_key: str) -> list[dict]:
+    """Search the public web for images relevant to a query.
+
+    Uses the same Tavily /search endpoint as web_search(), with image
+    inclusion turned on, rather than a separate endpoint - Tavily returns
+    an "images" field alongside the normal text results when asked.
+
+    Args:
+        query: The image-search query.
+        api_key: The learner's Tavily API key.
+
+    Returns:
+        A list of {"url": str, "description": str} dicts, best match first.
+
+    Raises:
+        RetrievalError: If the Tavily API call fails.
+    """
+    if current_app.config.get("LLM_TEST_MODE"):
+        return [{"url": "https://example.com/mock-image.jpg", "description": f"[MOCK] Image for '{query}'"}]
+
+    try:
+        response = requests.post(
+            SEARCH_URL,
+            json={
+                "api_key": api_key,
+                "query": query,
+                "max_results": 1,
+                "include_images": True,
+                "include_image_descriptions": True,
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        raise RetrievalError(f"Tavily image search failed: {e}") from e
+
+    # Tavily can return a real "description" key with a null value (seen
+    # live for some results, e.g. Facebook/Instagram-hosted images it
+    # can't describe) - `or ""` catches that; a plain .get(key, "") default
+    # only covers the key being absent entirely, not present-but-null.
+    return [
+        {"url": img.get("url") or "", "description": img.get("description") or ""}
+        for img in data.get("images", [])
+    ]

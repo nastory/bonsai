@@ -12,7 +12,7 @@ import pytest
 from werkzeug.datastructures import FileStorage
 
 from app.extensions import db
-from app.models import ConversationMessage, Course
+from app.models import ConversationMessage, Course, UserSettings
 from app.services.course_generation import (
     MAX_INTERVIEW_QUESTIONS,
     CourseNotFoundError,
@@ -24,6 +24,7 @@ from app.services.course_generation import (
     submit_outline_feedback,
 )
 from app.services.document_extraction import DocumentExtractionError
+from app.services.image_generation import ImageGenerationError
 
 
 def test_start_course_creates_course_in_interview_stage(db) -> None:
@@ -148,6 +149,34 @@ def test_attaching_a_second_document_on_a_later_turn_appends_to_the_same_index(d
     results = query(step2.course, ["anything"], resolve_embedding_config(), top_k=10)
     file_names = {chunk.source for chunk in results[0]}
     assert file_names == {"notes1.txt", "notes2.txt"}
+
+
+def test_start_course_web_search_supplement_defaults_to_off(db) -> None:
+    file = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes.txt")
+
+    step = start_course("I want to learn about this paper", files=[file])
+
+    assert step.course.web_search_supplement_enabled is False
+
+
+def test_start_course_can_opt_into_web_search_supplement(db) -> None:
+    file = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes.txt")
+
+    step = start_course("I want to learn about this paper", files=[file], supplement_with_web_search=True)
+
+    assert step.course.web_search_supplement_enabled is True
+
+
+def test_web_search_supplement_opt_in_is_or_in_not_overwritten(db) -> None:
+    file1 = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes1.txt")
+    step = start_course("I want to learn about this paper", files=[file1], supplement_with_web_search=True)
+
+    file2 = FileStorage(stream=BytesIO(b"Warp scheduling determines thread execution order."), filename="notes2.txt")
+    step2 = submit_interview_answer(
+        step.course.id, "here's another paper", files=[file2], supplement_with_web_search=False
+    )
+
+    assert step2.course.web_search_supplement_enabled is True
 
 
 def test_interview_question_is_generic_without_a_source_material(db) -> None:
@@ -512,6 +541,41 @@ def test_approve_outline_compacts_and_stores_course_context(db) -> None:
     assert approved.context_summary["keyDecisions"] == []
 
 
+def test_approve_outline_generates_thumbnail_when_enabled(db) -> None:
+    step = start_course("I want to learn GPU programming")
+    course = generate_outline(step.course.id)
+
+    approved = approve_outline(course.id)
+
+    assert approved.thumbnail_image_path is not None
+    assert approved.to_dict()["thumbnailImageUrl"] == f"/api/courses/{course.id}/thumbnail"
+
+
+def test_approve_outline_skips_thumbnail_when_disabled(db) -> None:
+    UserSettings.get_or_create().thumbnail_generation_enabled = False
+    step = start_course("I want to learn GPU programming")
+    course = generate_outline(step.course.id)
+
+    approved = approve_outline(course.id)
+
+    assert approved.thumbnail_image_path is None
+    assert approved.to_dict()["thumbnailImageUrl"] is None
+
+
+def test_approve_outline_survives_thumbnail_generation_failure(db, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.course_generation.generate_thumbnail_image",
+        lambda *a, **k: (_ for _ in ()).throw(ImageGenerationError("boom")),
+    )
+    step = start_course("I want to learn GPU programming")
+    course = generate_outline(step.course.id)
+
+    approved = approve_outline(course.id)
+
+    assert approved.stage == "active"
+    assert approved.thumbnail_image_path is None
+
+
 def test_delete_course_raises_for_unknown_course(db) -> None:
     with pytest.raises(CourseNotFoundError):
         delete_course("does-not-exist")
@@ -523,10 +587,13 @@ def test_delete_course_removes_the_course_and_its_children(app, db) -> None:
     from app.models import Activity, Module, SourceMaterial
     from app.services.content_storage import save_activity_content
     from app.services.source_material_storage import save_source_material_text
+    from app.services.thumbnail_storage import save_thumbnail_image
 
+    thumbnail_path = save_thumbnail_image("c1", b"fake-png-bytes")
     course = Course(
         id="c1", title="GPU Programming", description="d", prerequisites=[],
         estimated_timeline="1 week", thumbnail_url="x", stage="active",
+        thumbnail_image_path=thumbnail_path,
     )
     module = Module(
         id="m1", course_id="c1", position=0, title="Basics", description="d",
@@ -547,8 +614,10 @@ def test_delete_course_removes_the_course_and_its_children(app, db) -> None:
 
     content_absolute = Path(app.instance_path) / content_path
     text_absolute = Path(app.instance_path) / text_path
+    thumbnail_absolute = Path(app.instance_path) / thumbnail_path
     assert content_absolute.exists()
     assert text_absolute.exists()
+    assert thumbnail_absolute.exists()
 
     delete_course("c1")
 
@@ -558,3 +627,4 @@ def test_delete_course_removes_the_course_and_its_children(app, db) -> None:
     assert db.session.get(SourceMaterial, "src-1") is None
     assert not content_absolute.exists()
     assert not text_absolute.exists()
+    assert not thumbnail_absolute.exists()

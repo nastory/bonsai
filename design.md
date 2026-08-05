@@ -435,7 +435,7 @@ Nothing in this slice special-cases the BYOM/hosted distinction: `run_agent` cal
 ### Verified
 Full test suite covers: `retrieval.py`'s mocked/real branches and Tavily request/response shape (`web_search`/`fetch_page`, including the HTTP-failure and no-results error paths); `complete_with_tools()`'s argument forwarding and raw-message return; `retrieval_agent.run_agent()`'s no-tool-call, single-tool-call (both `web_search` and `fetch_page`), and max-iterations-forces-a-final-answer cases, all via monkeypatched `litellm.completion` so no network call happens; and `module_generation.py`'s routing (Tavily key present -> `run_agent` used and its result validated/persisted with citations; key absent -> old plain path, unchanged). Not yet done: a live call against a real Tavily API key, since one isn't configured yet. That's the next step before this can be considered fully verified end-to-end, the same way BYOM model selection wasn't considered done until it was checked against a real running Ollama instance.
 
-## Roadmap: AI evals (Phase 2, not yet built)
+## Roadmap: AI evals (Phase 3, not yet built)
 
 Added to the roadmap, not started. The schema validation built into `llm_schemas.py` catches *structural* problems (malformed JSON, missing fields) but says nothing about *quality*: a syntactically perfect interview question can still be unhelpful, a search result can be on-topic but useless, a generated lesson can be complete-looking but shallow or off-tone. The ask is a lightweight "AI grader" layer: for a given generated artifact plus a rubric, have a model score it and explain why, rather than only trusting schema validation and human spot-checks.
 
@@ -451,26 +451,100 @@ Each grader is probably its own small rubric prompt (as a `.md` file, same patte
 ### Open questions to resolve when this is actually picked up
 Score scale and pass/fail threshold (if any); whether evals run against live freshly-generated content or a fixed set of recorded "golden" examples for repeatability; which model grades (same provider/model the learner configured, or a fixed grading model independent of their settings, to avoid a model grading its own output); and how results get surfaced (console report, a file, something in the UI) — none of this is decided yet.
 
-## Roadmap: In-course visual aids for reading activities (Phase 2, not yet built)
+## In-course visual aids for reading activities (Phase 2, DONE)
 
-Scoped, not started. Phase 2 already plans generated image thumbnails (course/module level); this is a separate, retrieval-based mechanism for illustrating concepts *within* a reading activity's body text, using Tavily image search rather than an image-generation model.
+Built as scoped below, no material changes. Retrieval-based, not generation: illustrates concepts *within* a reading activity's body text using Tavily image search, separate from Phase 2's generated course/module thumbnails.
 
-### Likely shape
-Slots into the existing per-activity generation loop in `module_generation.py`'s `_generate_activities_content()`: after a `reading`-type activity's body is generated, and only if `UserSettings.visual_aids_enabled` is on and a Tavily key is configured, a new prompt (`app/prompts/lesson_visual_aids.md`) reviews the finished body and returns 0-3 `{query, caption, anchorText}` entries — places where a real image would clarify a concept, each with a Tavily image-search query, a caption, and the verbatim body text to insert after. A new `VisualAidPlanSchema` in `llm_schemas.py` validates the response, same `validate_llm_json` pattern as every other generation call.
+Slots into the existing per-activity generation loop in `module_generation.py`'s `_generate_activities_content()`: after a `reading`-type activity's body is generated, and only if `UserSettings.visual_aids_enabled` is on and a Tavily key is configured, `_add_visual_aids()` calls a new prompt (`app/prompts/lesson_visual_aids.md`, validated via a new `VisualAidPlanSchema` in `llm_schemas.py`) that reviews the finished body and returns 0-3 `{query, caption, anchorText}` entries. For each, a new `image_search(query, api_key)` in `retrieval.py` calls Tavily's `/search` endpoint with `include_images`/`include_image_descriptions` — confirmed live against a real Tavily key that the response shape is `images: [{url, description}]` (with `description` sometimes a real `null`, not just absent, for some hosts) — and the top result is spliced into the body as `![caption](url)` right after `anchorText`. Images are hotlinked, not downloaded/cached. An aid whose `anchorText` isn't found verbatim in the body, or whose image search returns nothing, is silently skipped. Gated behind `UserSettings.visual_aids_enabled` (Boolean, default `False`), same `deep_search_enabled` opt-in precedent. Frontend: `Markdown.tsx`'s block-level renderer gained an `img` override rendering a real `<figure>`/`<figcaption>` (the caption travels as markdown's alt-text position, which is otherwise invisible to a sighted user) instead of react-markdown's unstyled default. Live-verified end-to-end: a real image with a real caption and a genuine Tavily-hosted URL landed in a generated reading's body.
 
-For each returned aid, a new `image_search(query, api_key)` in `retrieval.py` calls Tavily's `/search` endpoint with `include_images`/`include_image_descriptions` (mocked under `LLM_TEST_MODE` like `web_search`/`fetch_page`), and the top result is spliced into the body as `![caption](url)` right after `anchorText`. Images are hotlinked, not downloaded/cached — consistent with how citations already store external URLs rather than fetched content, so no new storage plumbing. If `anchorText` isn't found verbatim in the body (weak-model hallucination) or Tavily returns no images, that aid is silently skipped rather than erroring — the same graceful-degradation precedent used elsewhere for imperfect model output (e.g. `plannedActivities` defaulting to `[]`).
+## Opt-in web-search supplementing for document-grounded courses (Phase 2, DONE)
 
-Gated behind a new `UserSettings.visual_aids_enabled` (Boolean, default `False`, needs a migration) rather than running automatically whenever a Tavily key is present, matching the existing `deep_search_enabled`/`thumbnailGenerationEnabled` precedent for opt-in, credit-costly features.
+Built as scoped below. Reconciled the PRD against what had shipped: the PRD's Retrieval & Citation section always said a document-grounded course's retrieval agent should "supplement [the document] with web search rather than replacing it," but `_generate_activities_content()` skipped search entirely whenever a course had source materials. Fixed by making it an explicit per-course opt-in rather than an implicit always-skip.
 
-### Deliberately out of scope for v1
-Non-`reading` activity types (essay/project/discussion prompts are short instructions, not explanatory prose); local image download/caching; and LLM-judged re-ranking across multiple image candidates — Tavily's own relevance ranking is trusted for the first cut, revisited only if results are visibly poor in practice.
+New `Course.web_search_supplement_enabled` (Boolean, default `False`) — OR'd in, not overwritten, across multiple document uploads on different interview turns, so opting in once keeps it on for the course. Surfaced as a small inline `Toggle` next to `CreateCourse.tsx`'s attached-file chips (only shown when files are attached in that submission), sent as a plain `supplementWithWebSearch` form field rather than folded into the free-text interview — a binary preference doesn't need an LLM to parse it, and unlike the interview's own questions, a weak model misreading "yes"/"no" here would silently produce the wrong grounding behavior with no visible failure. `module_generation.py`'s branch condition became `if not module.course.source_materials or module.course.web_search_supplement_enabled` — the only functional change needed, since everything downstream (search planning, Tavily fetch, chunk, embed, unified per-activity vector retrieval) already existed from the document-RAG work; a supplemented course's index just ends up with both document and web chunks. Live-verified: a course with an uploaded document and the toggle on came back with citations correctly blending the document (no url) and three genuine web sources (with real urls).
 
-## Roadmap: opt-in web-search supplementing for document-grounded courses (Phase 2, not yet built)
+## "Keep going / dive deeper / branch off" from a completed course (Phase 2, DONE)
 
-Scoped, not started — and not really a new feature so much as reconciling the PRD against what actually shipped. The PRD's Retrieval & Citation section always said a document-grounded course's retrieval agent should "supplement [the document] with web search rather than replacing it," but the Nineteenth build slice's real implementation (document ingestion, Slice 5 above) deliberately does the opposite: `_generate_activities_content()` skips `plan_activity_searches()`/`retrieve_for_module()` entirely whenever `module.course.source_materials` is non-empty. Found while scoping this against the PRD text directly.
+Closes the last gap the PRD had already named ("From a completed course, a learner can start a new one that goes deeper into the same topic... or branches into a related topic. Either path creates a new course rather than editing the finished one.") but that nothing in the code actually detected: `Course.stage` only ever reached `interview -> outline_review -> active`, `"completed"` was never assigned anywhere, and `complete_activity()` silently did nothing when there was no next module to unlock.
 
-### Likely shape
-Make it an explicit per-course choice instead of an implicit always-skip: at document-upload time during course creation, ask the learner whether to supplement the attached document with online resources. Default (no answer, or "no") stays document-only, matching what's shipped today; opting in runs the document-grounded course through the same search-planning/retrieval path a no-document course already uses (`module_retrieval.py`'s `plan_activity_searches()`/`retrieve_for_module()`), document as primary source, web results supplementing rather than replacing it. Where exactly the yes/no question fits in the interview flow, and the schema/prompt/storage changes needed to carry that choice from upload time through to module generation, aren't decided yet.
+Two small changes, no new mechanism: `app/routes/activities.py::complete_activity()` now sets `course.stage = "completed"` in the branch where `next_module is None` (this was the last module), instead of the unlock-next-module logic that branch used to only skip past. "Keep going" and "branch into something related" are, per the PRD's own framing, the *same* mechanism — the distinction is the learner's stated intent in the interview that follows, not two code paths — so this reuses the existing Branch Off machinery (`Course.parent_course_id`, `start_course(..., parent_course_id=...)`) rather than building anything new.
+
+Frontend: `CourseHome.tsx` gained a `course.stage === 'completed'` branch ahead of the existing "currently on" card, showing a "Course complete" state with a "Keep going" button that calls `navigate('/create', { state: { parentCourseId: course.id } })` — identical to `Lesson.tsx`'s existing "Branch off" button. `CourseCard.tsx` (used by `MyCourses.tsx`) shows a small "Completed" `Badge` next to the title. `ModuleCompletionModal.tsx`'s `onChangeThisCourse` prop became optional; `Lesson.tsx` omits it when the just-finished module was the course's last one (nothing ahead left to redirect), and the modal's caption text adjusts accordingly. `Library.tsx`/`Today.tsx` deliberately left unchanged — surfacing completed courses there is a plausible follow-up, not part of this scope. No migration needed (`Course.stage` was already a plain string column, `CourseStage` already included `'completed'` on the frontend). Live-verified end-to-end against the real dev backend and real Ollama: completed every remaining activity of a real seeded course (generating its last two modules' content live along the way), confirmed `stage` flipped to `"completed"` and persisted across a fresh `GET`, and confirmed in the browser that `CourseHome` shows the new completed state and `MyCourses` shows the badge.
+
+## Learning Objectives — weekly activity-count goal (Phase 2, DONE)
+
+Per the PRD's Learning Objectives section: an optional, standing (not per-course) personal goal for how
+many activities to complete each week, shown as progress on the Today dashboard, no penalty for missing
+it.
+
+New nullable `Activity.completed_at` (`DateTime`), set in `app/routes/activities.py::complete_activity()`
+alongside `status = "completed"`, serialized as `completedAt` (ISO string or `null`). New nullable
+`UserSettings.weekly_goal_activities` (`Integer`) — `None` doubles as both "no goal set" and the "cleared"
+state, so `PUT /api/settings`'s existing `if "key" in body: settings.field = body["key"]` pattern needed
+no new logic to support clearing (a JSON `null` in the body already assigns `None`); the route rejects a
+non-positive provided value with a 400. One migration for both new nullable columns, no `server_default`
+needed.
+
+Deliberately **no new backend endpoint**: the frontend already fetches every course (and now every
+activity's `completedAt`) on load, so "how many activities completed this week" is computed client-side
+from data already in hand — new `frontend/src/lib/weekHelpers.ts` (`startOfWeek()`, most recent Monday
+00:00 local time; `countActivitiesCompletedSince()`, flattens every course → module → activity). This
+recomputes live from real timestamps with no stored/reset state to manage, matching the project's
+preference for the smallest solution that fits.
+
+Frontend: `Settings.tsx` gained a "Learning Objectives" `Card` following the existing
+toggle-enables-a-companion-field pattern (same as `embeddingUseCompletionCredentials`) — a `Toggle` keyed
+off `weeklyGoalActivities != null`, and when on, a number `Input` using the established
+local-draft/`onBlur`-save pattern; turning the toggle off clears the goal immediately (`{
+weeklyGoalActivities: null }`), not deferred to blur. `Today.tsx` gained a small progress card ("X of Y
+activities this week" + `ProgressBar`), shown only when a goal is set, placed above the existing
+"Continue learning" card — no color-coding or messaging for under/over goal, per the PRD's no-penalty
+framing. Live-verified against the real dev backend: set a goal via `PUT /api/settings`, completed a real
+activity via the actual HTTP API, confirmed `completedAt` landed correctly and the goal set/cleared
+correctly through the real endpoint.
+
+## Course thumbnail image generation (Phase 2, DONE)
+
+Per the PRD: real generated images for course/module thumbnails, replacing today's placeholders. Scoped
+with the user to **course thumbnails only** — Module has no thumbnail field or UI slot today, real added
+scope not part of this pass. Confirmed via direct inspection of the installed `litellm==1.56.4`:
+`image_generation()` only supports OpenAI and Azure — no Anthropic, no Ollama/BYOM. Built and structurally
+verified without a real OpenAI call (the dev environment had no key configured at the time); the user
+does the first live verification themselves once they add one.
+
+New independently-configurable model role, mirroring the embedding-model role exactly: `UserSettings`
+gained `image_generation_model`/`image_generation_use_completion_credentials`/`image_generation_api_key`,
+and `model_selection.py::resolve_image_generation_config()` mirrors `resolve_embedding_config()`'s tier
+branching (raises `ImageGenerationNotConfiguredError` when unset, outside test mode). New
+`app/services/image_generation.py::generate_thumbnail_image()`, mirroring `embedding.py`'s mock-branch/
+real-branch structure — the real branch requests `response_format="b64_json"` from
+`litellm.image_generation()` specifically so the image is saved permanently on disk rather than a
+provider-hosted URL that can expire. New `app/services/thumbnail_storage.py` (mirrors
+`content_storage.py`/`source_material_storage.py`'s instance-relative path convention) and new
+`Course.thumbnail_image_path` column — `thumbnail_url` itself is untouched, still always the gradient
+fallback string every course gets by default.
+
+Generation triggers in `course_generation.py::approve_outline()`, right where course-context compaction
+already runs (the first point a course has a real title/description, unlike creation time when it's still
+"New Course"), wrapped in a best-effort helper (`_generate_thumbnail_if_enabled()`) that never raises —
+an unconfigured or failing model just leaves the course on its gradient fallback, same "don't let an
+optional enhancement break the core flow" precedent as visual aids. New `GET /api/courses/<id>/thumbnail`
+route serves the image inline; `Course.to_dict()` gained a new `thumbnailImageUrl` field (not an overload
+of `thumbnailUrl`, so the frontend never has to guess whether that string is a CSS class fragment or a
+URL) pointing at it when an image exists. Frontend: all 3 render sites (`CourseCard.tsx`, `Today.tsx`,
+`CourseHome.tsx`) gained the same conditional (`thumbnailImageUrl` present → real `<img>`, else the
+existing gradient `<div>`); `Settings.tsx`'s hosted-tier branch gained an "Image generation model"
+sub-section, structurally identical to the embedding-model one right above it; the pre-existing but
+previously-dead `thumbnailGenerationEnabled` toggle is now real and its description updated accordingly.
+
+**Verification**: 372 backend tests passing (was 346) — new `test_image_generation.py`/
+`test_thumbnail_storage.py`, extended `test_model_selection.py`/`test_course_generation.py`/
+`test_courses_routes.py`/`test_settings_routes.py`. A real-mode structural test (monkeypatched
+`litellm.image_generation`) proves the correct request gets built, substituting for a live call. Migration
+verified upgrade/downgrade/upgrade against the real dev DB. The fallback path itself *was* live-verified
+against the real dev backend: with no image model configured (the actual dev state), approving a real
+course's outline through the real HTTP API against real Ollama succeeded normally, `thumbnailImageUrl`
+stayed `null`, and `thumbnailUrl` was untouched.
 
 ## Phase 1: Docker Compose for local development
 

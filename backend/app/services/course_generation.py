@@ -14,7 +14,7 @@ from flask import current_app
 from werkzeug.datastructures import FileStorage
 
 from app.extensions import db
-from app.models import Course, ConversationMessage, Module, SourceMaterial
+from app.models import Course, ConversationMessage, Module, SourceMaterial, UserSettings
 from app.services.course_context import (
     assemble_learning_history,
     compact_course_context,
@@ -24,6 +24,7 @@ from app.services.course_context import (
 )
 from app.services.document_chunking import chunk_pages
 from app.services.document_extraction import extract_pages, extract_text
+from app.services.image_generation import ImageGenerationError, generate_thumbnail_image
 from app.services.llm import complete
 from app.services.llm_schemas import (
     CourseDirectionChangeSchema,
@@ -33,11 +34,17 @@ from app.services.llm_schemas import (
     PlannedActivitySchema,
     validate_llm_json,
 )
-from app.services.model_selection import resolve_embedding_config, resolve_model_config
+from app.services.model_selection import (
+    ImageGenerationNotConfiguredError,
+    resolve_embedding_config,
+    resolve_image_generation_config,
+    resolve_model_config,
+)
 from app.services.module_generation import ModuleNotFoundError
 from app.services.prompts import load_prompt
 from app.services.content_storage import delete_activity_content
 from app.services.source_material_storage import delete_source_material_text, save_source_material_text
+from app.services.thumbnail_storage import delete_thumbnail_image, save_thumbnail_image
 from app.services.vector_store import build_or_update_index, delete_vector_index
 
 MAX_INTERVIEW_QUESTIONS = 7
@@ -57,7 +64,10 @@ class InterviewStep:
 
 
 def start_course(
-    first_message: str, files: list[FileStorage] | None = None, parent_course_id: str | None = None
+    first_message: str,
+    files: list[FileStorage] | None = None,
+    parent_course_id: str | None = None,
+    supplement_with_web_search: bool = False,
 ) -> InterviewStep:
     """Start a new course from the learner's initial description of what they want to learn.
 
@@ -72,6 +82,10 @@ def start_course(
             _parent_context()), and Course.parent_course_id records the
             lineage. The parent course itself is never modified — branching
             off leaves it and its own remaining modules exactly as they were.
+        supplement_with_web_search: If true and files are attached, module
+            generation will also search the web to supplement the document(s)
+            rather than grounding solely in them - see _ingest_source_materials().
+            Ignored when no files are attached in this call.
 
     Returns:
         The new course (in the 'interview' stage) plus the first follow-up question.
@@ -99,7 +113,7 @@ def start_course(
     # commit on first use (UserSettings.get_or_create()), which would
     # otherwise prematurely persist this course/message if extraction then
     # failed on a later file.
-    _ingest_source_materials(course, files)
+    _ingest_source_materials(course, files, supplement_with_web_search)
     db.session.add(course)
     _add_message(course.id, "user", "interview_answer", first_message)
 
@@ -109,7 +123,7 @@ def start_course(
 
 
 def submit_interview_answer(
-    course_id: str, answer: str, files: list[FileStorage] | None = None
+    course_id: str, answer: str, files: list[FileStorage] | None = None, supplement_with_web_search: bool = False
 ) -> InterviewStep:
     """Record an interview answer and ask the next question (or signal readiness).
 
@@ -118,6 +132,8 @@ def submit_interview_answer(
         answer: The learner's answer to the previous question.
         files: Any documents attached alongside this answer (a learner can
             attach a document mid-interview, not just with the first message).
+        supplement_with_web_search: See start_course()'s matching arg. Only
+            meaningful when files are attached in this same call.
 
     Returns:
         The updated course plus the next question, or done=True if there are enough answers.
@@ -130,7 +146,7 @@ def submit_interview_answer(
     # Ingest before adding the answer message, for the same reason as
     # start_course(): a nested commit inside resolve_model_config() shouldn't
     # prematurely persist it if extraction then fails on a later file.
-    _ingest_source_materials(course, files)
+    _ingest_source_materials(course, files, supplement_with_web_search)
     _add_message(course.id, "user", "interview_answer", answer)
 
     step = _advance_interview(course)
@@ -203,8 +219,36 @@ def approve_outline(course_id: str) -> Course:
     _add_message(course.id, "user", "outline_approved", "Approved. Let's start learning.")
     context = compact_course_context(course)
     course.context_summary = context.model_dump()
+    _generate_thumbnail_if_enabled(course)
     db.session.commit()
     return course
+
+
+def _generate_thumbnail_if_enabled(course: Course) -> None:
+    """Best-effort: generate and attach a real thumbnail image, if configured.
+
+    Never raises - an unconfigured or failing image generation model should
+    never block outline approval, the same "don't let an optional
+    enhancement break the core flow" precedent as module generation's
+    silently-skipped visual aids. A course whose thumbnail generation is
+    skipped or fails just keeps its gradient thumbnail_url fallback, same
+    as every course gets by default today.
+
+    Args:
+        course: The course to generate a thumbnail for. Must already have
+            a real title/description (i.e. called after outline approval,
+            not at course creation, when both are still placeholders).
+    """
+    settings = UserSettings.get_or_create()
+    if not settings.thumbnail_generation_enabled:
+        return
+    try:
+        model_config = resolve_image_generation_config()
+        prompt = f"A course thumbnail image for a course titled '{course.title}': {course.description}"
+        image_bytes = generate_thumbnail_image(prompt, model_config)
+        course.thumbnail_image_path = save_thumbnail_image(course.id, image_bytes)
+    except (ImageGenerationNotConfiguredError, ImageGenerationError):
+        current_app.logger.info("Skipping thumbnail generation for course %s: not configured or failed.", course.id)
 
 
 def delete_course(course_id: str) -> None:
@@ -234,6 +278,8 @@ def delete_course(course_id: str) -> None:
         delete_source_material_text(material.text_path)
     if course.vector_index_path:
         delete_vector_index(course.vector_index_path)
+    if course.thumbnail_image_path:
+        delete_thumbnail_image(course.thumbnail_image_path)
     db.session.delete(course)
     db.session.commit()
 
@@ -511,7 +557,9 @@ def _get_module_or_raise(module_id: str) -> Module:
     return module
 
 
-def _ingest_source_materials(course: Course, files: list[FileStorage] | None) -> None:
+def _ingest_source_materials(
+    course: Course, files: list[FileStorage] | None, supplement_with_web_search: bool = False
+) -> None:
     """Extract, chunk, embed, summarize, and persist any documents attached to this interview turn.
 
     Writes each file's extracted text to disk, chunks it and adds the
@@ -529,6 +577,13 @@ def _ingest_source_materials(course: Course, files: list[FileStorage] | None) ->
     Args:
         course: The course these materials belong to.
         files: The uploaded files, or None/empty if none were attached.
+        supplement_with_web_search: If true, module generation will also
+            search the web to supplement these documents rather than
+            grounding solely in them (see module_generation.py). OR'd onto
+            course.web_search_supplement_enabled, not overwritten - a
+            learner can opt in on any upload across multiple interview
+            turns, and it stays on for the course from then on. No effect
+            if files is empty (nothing to opt in *for* in that case).
 
     Raises:
         DocumentExtractionError: If a file's text can't be extracted.
@@ -538,6 +593,8 @@ def _ingest_source_materials(course: Course, files: list[FileStorage] | None) ->
     files = [f for f in (files or []) if f and f.filename]
     if not files:
         return
+
+    course.web_search_supplement_enabled = course.web_search_supplement_enabled or supplement_with_web_search
 
     model_config = resolve_model_config()
     embedding_config = resolve_embedding_config()

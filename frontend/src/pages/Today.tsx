@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { FileText, PlayCircle } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
 import { findCurrentActivity, activityPath } from '../lib/courseHelpers';
+import { startOfWeek, countActivitiesCompletedSince } from '../lib/weekHelpers';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
@@ -20,6 +21,9 @@ export function Today() {
   const inProgressCourse = courses.find((c) => findCurrentActivity(c));
   const current = inProgressCourse && findCurrentActivity(inProgressCourse);
 
+  const weeklyGoal = user.weeklyGoalActivities;
+  const completedThisWeek = weeklyGoal != null ? countActivitiesCompletedSince(courses, startOfWeek(new Date())) : 0;
+
   return (
     <div className="mx-auto max-w-3xl px-8 py-10">
       <h1 className="text-2xl font-semibold text-bonsai-text">
@@ -27,13 +31,33 @@ export function Today() {
       </h1>
       <p className="mt-1 text-sm text-bonsai-text-muted">Ready to grow your knowledge?</p>
 
+      {weeklyGoal != null && (
+        <Card className="mt-6">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-bonsai-text-muted">This week's goal</p>
+            <span className="text-sm font-medium text-bonsai-text">
+              {completedThisWeek} of {weeklyGoal} activities
+            </span>
+          </div>
+          <ProgressBar percent={Math.min(100, Math.round((completedThisWeek / weeklyGoal) * 100))} className="mt-2" />
+        </Card>
+      )}
+
       {current && inProgressCourse ? (
         <Card className="mt-6">
           <p className="mb-3 text-sm font-medium text-bonsai-text-muted">Continue learning</p>
           <div className="flex gap-4">
-            <div
-              className={`h-20 w-20 shrink-0 rounded-lg bg-gradient-to-br ${inProgressCourse.thumbnailUrl}`}
-            />
+            {inProgressCourse.thumbnailImageUrl ? (
+              <img
+                src={inProgressCourse.thumbnailImageUrl}
+                alt=""
+                className="h-20 w-20 shrink-0 rounded-lg object-cover"
+              />
+            ) : (
+              <div
+                className={`h-20 w-20 shrink-0 rounded-lg bg-gradient-to-br ${inProgressCourse.thumbnailUrl}`}
+              />
+            )}
             <div className="flex-1">
               <p className="font-semibold text-bonsai-text">
                 <InlineMarkdown>{inProgressCourse.title}</InlineMarkdown>

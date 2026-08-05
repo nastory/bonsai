@@ -86,7 +86,15 @@ export function CourseHome() {
   return (
     <div className="mx-auto max-w-3xl px-8 py-10">
       <div className="flex items-center gap-4">
-        <div className={`h-16 w-16 shrink-0 rounded-lg bg-gradient-to-br ${course.thumbnailUrl}`} />
+        {course.thumbnailImageUrl ? (
+          <img
+            src={course.thumbnailImageUrl}
+            alt=""
+            className="h-16 w-16 shrink-0 rounded-lg object-cover"
+          />
+        ) : (
+          <div className={`h-16 w-16 shrink-0 rounded-lg bg-gradient-to-br ${course.thumbnailUrl}`} />
+        )}
         <div>
           <h1 className="text-2xl font-semibold text-bonsai-text">
             <InlineMarkdown>{course.title}</InlineMarkdown>
@@ -103,7 +111,17 @@ export function CourseHome() {
           <span className="text-sm font-medium text-bonsai-text">{course.progressPercent}%</span>
         </div>
 
-        {current ? (
+        {course.stage === 'completed' ? (
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-bonsai-text-muted">Course complete</p>
+              <p className="text-sm font-medium text-bonsai-text">Nice work finishing this one.</p>
+            </div>
+            <Button onClick={() => navigate('/create', { state: { parentCourseId: course.id } })}>
+              Keep going
+            </Button>
+          </div>
+        ) : current ? (
           <div className="mt-4 flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-bonsai-text-muted">Currently on</p>

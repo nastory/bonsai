@@ -15,6 +15,7 @@ DEFAULT_HOSTED_MODELS = {
 DEFAULT_BYOM_MODEL = "llama3"
 DEFAULT_BYOM_ENDPOINT = "http://localhost:11434"
 MOCK_EMBEDDING_MODEL = "mock-embedding-model"
+MOCK_IMAGE_GENERATION_MODEL = "mock-image-generation-model"
 
 
 class EmbeddingNotConfiguredError(Exception):
@@ -26,6 +27,14 @@ class EmbeddingNotConfiguredError(Exception):
     valid model name for BYOM/Ollama and vice versa. Failing clearly here,
     with an actionable message, is more honest than silently picking a
     default that's likely wrong for the learner's configured tier.
+    """
+
+
+class ImageGenerationNotConfiguredError(Exception):
+    """Raised when thumbnail generation is attempted but no image model is set.
+
+    Same reasoning as EmbeddingNotConfiguredError - there's no safe
+    universal default image generation model to guess at.
     """
 
 
@@ -112,6 +121,52 @@ def resolve_embedding_config() -> dict:
         settings.model_provider_api_key
         if settings.embedding_use_completion_credentials
         else settings.embedding_api_key
+    )
+    if api_key:
+        config["api_key"] = api_key
+    return config
+
+
+def resolve_image_generation_config() -> dict:
+    """Build the model/api_key/api_base kwargs image_generation.generate_thumbnail_image() needs.
+
+    Mirrors resolve_embedding_config() exactly - same tier branching, same
+    shared-vs-dedicated-credentials toggle. Unlike embeddings, there's no
+    confirmed working BYOM path: the installed litellm's image_generation()
+    only has Azure/OpenAI/Bedrock provider branches, no Ollama one. The
+    BYOM branch below still returns a shape for consistency with every
+    other resolve_*_config() function, but a caller using it will get a
+    real error back from litellm, not a working local image - a disclosed
+    limitation, not something this function silently papers over.
+
+    Returns:
+        A dict with a "model" key, plus "api_key" (hosted) or "api_base"
+        (BYOM) when relevant, same convention as resolve_model_config().
+
+    Raises:
+        ImageGenerationNotConfiguredError: If no image generation model is
+            set. Not raised in LLM_TEST_MODE, same precedent as
+            resolve_embedding_config().
+    """
+    settings = UserSettings.get_or_create()
+    if current_app.config.get("LLM_TEST_MODE"):
+        return {"model": settings.image_generation_model or MOCK_IMAGE_GENERATION_MODEL}
+
+    if not settings.image_generation_model:
+        raise ImageGenerationNotConfiguredError(
+            "No image generation model is configured. Set one in Settings to generate course thumbnails."
+        )
+    model_name = settings.image_generation_model
+
+    if settings.model_provider_tier == "byom":
+        endpoint = settings.model_provider_byom_endpoint or DEFAULT_BYOM_ENDPOINT
+        return {"model": f"ollama/{model_name}", "api_base": endpoint}
+
+    config: dict = {"model": model_name}
+    api_key = (
+        settings.model_provider_api_key
+        if settings.image_generation_use_completion_credentials
+        else settings.image_generation_api_key
     )
     if api_key:
         config["api_key"] = api_key

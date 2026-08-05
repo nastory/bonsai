@@ -282,6 +282,29 @@ class DocumentSummarySchema(BaseModel):
     summary: str
 
 
+class VisualAidSchema(BaseModel):
+    """One suggested image placement within a reading activity's body."""
+
+    query: str
+    caption: str
+    anchorText: str
+
+
+class VisualAidPlanSchema(BaseModel):
+    """Expected shape of a lesson_visual_aids.md response.
+
+    Generated once per reading activity, after its body is written (see
+    module_generation.py), only when UserSettings.visual_aids_enabled and a
+    Tavily key are both set. 0-3 aids per the prompt's own instruction -
+    not enforced here since fewer (including zero) is always valid; more
+    than a handful would just mean the model didn't follow instructions,
+    which the splicing step degrades gracefully against anyway (an aid
+    whose anchorText isn't found verbatim in the body is silently skipped).
+    """
+
+    aids: list[VisualAidSchema] = Field(default_factory=list)
+
+
 def validate_llm_json(raw: str, schema: type[BaseModel]) -> BaseModel:
     """Parse and validate an LLM response against an expected schema.
 

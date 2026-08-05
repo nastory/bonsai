@@ -50,6 +50,40 @@ def test_start_course_with_an_attached_file_persists_a_source_material(client, d
     assert body["sourceMaterials"][0]["fileName"] == "notes.txt"
 
 
+def test_start_course_with_supplement_flag_persists_it_on_the_course(client, db) -> None:
+    from app.extensions import db as _db
+    from app.models import Course
+
+    response = client.post(
+        "/api/courses",
+        data={
+            "message": "I want to learn about this paper",
+            "files": (BytesIO(b"GPU memory coalescing improves throughput."), "notes.txt"),
+            "supplementWithWebSearch": "true",
+        },
+    )
+
+    assert response.status_code == 201
+    course = _db.session.get(Course, response.get_json()["courseId"])
+    assert course.web_search_supplement_enabled is True
+
+
+def test_start_course_without_supplement_flag_defaults_to_false(client, db) -> None:
+    from app.extensions import db as _db
+    from app.models import Course
+
+    response = client.post(
+        "/api/courses",
+        data={
+            "message": "I want to learn about this paper",
+            "files": (BytesIO(b"GPU memory coalescing improves throughput."), "notes.txt"),
+        },
+    )
+
+    course = _db.session.get(Course, response.get_json()["courseId"])
+    assert course.web_search_supplement_enabled is False
+
+
 def test_start_course_with_an_unsupported_file_returns_422_and_persists_nothing(client, db) -> None:
     from app.models import Course
 

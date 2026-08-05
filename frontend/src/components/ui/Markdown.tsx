@@ -24,6 +24,16 @@ export function Markdown({ children }: { children: string }) {
         ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
         ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
         li: ({ children }) => <li>{children}</li>,
+        // A visual aid's caption travels as markdown's "alt text" position
+        // (![caption](url) - see module_generation.py's _add_visual_aids()),
+        // shown as a real, visible caption here rather than left invisible
+        // the way a bare <img alt> normally would be.
+        img: ({ src, alt }) => (
+          <figure className="my-3">
+            <img src={src} alt={alt} loading="lazy" className="max-w-full rounded-lg" />
+            {alt && <figcaption className="mt-1 text-xs text-bonsai-text-muted">{alt}</figcaption>}
+          </figure>
+        ),
       }}
     >
       {children}

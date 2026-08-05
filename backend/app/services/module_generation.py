@@ -56,11 +56,13 @@ from app.services.llm_schemas import (
     GeneratedActivitySchema,
     GeneratedQuizActivityDecodingSchema,
     ModuleDigestSchema,
+    VisualAidPlanSchema,
     validate_llm_json,
 )
 from app.services.model_selection import resolve_embedding_config, resolve_model_config
 from app.services.module_retrieval import plan_activity_searches, retrieve_for_module
 from app.services.prompts import load_prompt
+from app.services.retrieval import image_search
 from app.services.vector_store import build_or_update_index
 from app.services.vector_store import query as query_vector_store
 
@@ -136,19 +138,21 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
     results_by_activity: dict[int, list[dict]] = {}
     citations_by_activity: dict[int, list[CitationSchema]] = {}
 
-    if not module.course.source_materials:
-        # Web-grounded: an LLM is still needed to plan good search terms
-        # (unlike document/already-fetched-web material, there's no way to
-        # query an arbitrary web corpus by embedding alone) - planned
-        # unconditionally, same as before this change, even without a
-        # Tavily key configured (retrieve_for_module() already returns empty
-        # results for every activity in that case, same as today). The
-        # fetched content is then chunked and embedded into the course's
-        # vector index rather than used raw - same storage/retrieval
-        # mechanism a document gets, just fed by a fresh Tavily fetch
-        # instead of an upload. Guarded by `if web_chunks` so a key-less or
-        # empty-results course never pays for an embedding call it doesn't
-        # need.
+    if not module.course.source_materials or module.course.web_search_supplement_enabled:
+        # Web-grounded, or a document-grounded course that opted in to
+        # supplementing its document(s) with web search (see
+        # course_generation.py's _ingest_source_materials()) rather than
+        # grounding solely in them - either way, an LLM is still needed to
+        # plan good search terms (unlike document/already-fetched-web
+        # material, there's no way to query an arbitrary web corpus by
+        # embedding alone) - planned unconditionally, even without a Tavily
+        # key configured (retrieve_for_module() already returns empty
+        # results for every activity in that case). The fetched content is
+        # then chunked and embedded into the course's vector index rather
+        # than used raw - same storage/retrieval mechanism a document gets,
+        # just fed by a fresh Tavily fetch instead of an upload. Guarded by
+        # `if web_chunks` so a key-less or empty-results course never pays
+        # for an embedding call it doesn't need.
         settings = UserSettings.get_or_create()
         search_plan = plan_activity_searches(module, model_config)
         search_results = retrieve_for_module(
@@ -165,10 +169,10 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
             module.course.vector_index_path = build_or_update_index(module.course, web_chunks, embedding_config)
 
     if module.course.vector_index_path:
-        # Covers document-grounded, web-grounded (just indexed above if this
-        # course had no index yet), and - once a future opt-in supplement
-        # feature ships - both at once. One retrieval mechanism regardless
-        # of source: the activity's own title+plan, embedded directly, is
+        # Covers document-grounded, web-grounded, and a supplemented course
+        # (both at once - just indexed above if this course had no index
+        # yet). One retrieval mechanism regardless of source: the
+        # activity's own title+plan, embedded directly, is
         # the query, since there's no need for an LLM to creatively phrase a
         # query against material that's already in hand (either just-fetched
         # or previously uploaded). One batched embedding call for every
@@ -212,14 +216,18 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
         )
         raw = complete(messages=messages, schema=decoding_schema, **model_config)
         parsed = validate_llm_json(raw, GeneratedActivitySchema)
-        if planned["type"] == "reading" and i in citations_by_activity:
-            # Deterministic, not model-authored, for both document and web
-            # sources now: we already know exactly which chunks were
-            # retrieved and handed to this activity, so there's no reason to
-            # trust the model to correctly echo back a source/page/url -
-            # same reasoning as correctAnswerIndex replacing text-matching
-            # for quizzes.
-            parsed = parsed.model_copy(update={"citations": citations_by_activity[i]})
+        if planned["type"] == "reading":
+            if i in citations_by_activity:
+                # Deterministic, not model-authored, for both document and
+                # web sources now: we already know exactly which chunks were
+                # retrieved and handed to this activity, so there's no reason
+                # to trust the model to correctly echo back a source/page/url
+                # - same reasoning as correctAnswerIndex replacing
+                # text-matching for quizzes.
+                parsed = parsed.model_copy(update={"citations": citations_by_activity[i]})
+            settings = UserSettings.get_or_create()
+            if settings.visual_aids_enabled and settings.tavily_api_key:
+                parsed = _add_visual_aids(parsed, model_config, settings.tavily_api_key)
         generated.append(parsed)
         messages.append({"role": "assistant", "content": raw})
 
@@ -228,6 +236,58 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
 
 def _chunk_citation_label(chunk: Chunk) -> str:
     return f"{chunk.source}, p. {chunk.page}" if chunk.page is not None else chunk.source
+
+
+def _add_visual_aids(activity: GeneratedActivitySchema, model_config: dict, tavily_api_key: str) -> GeneratedActivitySchema:
+    """Splice 0-3 real images into a finished reading activity's body, where they'd clarify a concept.
+
+    Only called when UserSettings.visual_aids_enabled and a Tavily key are
+    both set (see the caller). Graceful degradation throughout, matching
+    this codebase's existing precedent for imperfect model output (e.g.
+    plannedActivities defaulting to []): an aid whose anchorText isn't
+    found verbatim in the body (weak-model hallucination), or whose image
+    search returns nothing, is silently skipped rather than erroring -
+    zero spliced images is a completely normal outcome, not a failure.
+
+    Args:
+        activity: The already-generated reading activity.
+        model_config: Resolved completion model settings.
+        tavily_api_key: The learner's Tavily API key.
+
+    Returns:
+        The activity, with 0+ images spliced into its body as
+        `![caption](url)` right after each successfully-matched aid's
+        anchor text. Unchanged (same object) if body is empty or no aid
+        could be placed.
+    """
+    if not activity.body:
+        return activity
+
+    plan = _plan_visual_aids(activity.body, model_config)
+    body = activity.body
+    for aid in plan.aids:
+        if aid.anchorText not in body:
+            continue
+        images = image_search(aid.query, tavily_api_key)
+        if not images or not images[0]["url"]:
+            continue
+        body = body.replace(aid.anchorText, f"{aid.anchorText}\n\n![{aid.caption}]({images[0]['url']})", 1)
+
+    if body == activity.body:
+        return activity
+    return activity.model_copy(update={"body": body})
+
+
+def _plan_visual_aids(body: str, model_config: dict) -> VisualAidPlanSchema:
+    if current_app.config.get("LLM_TEST_MODE"):
+        return VisualAidPlanSchema(aids=[])
+
+    messages = [
+        {"role": "system", "content": load_prompt("lesson_visual_aids")},
+        {"role": "user", "content": body},
+    ]
+    raw = complete(messages=messages, schema=VisualAidPlanSchema, **model_config)
+    return validate_llm_json(raw, VisualAidPlanSchema)
 
 
 def _module_seed_data_message(module: Module) -> str:

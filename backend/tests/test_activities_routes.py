@@ -1,5 +1,7 @@
 """Tests for the activity-completion route."""
 
+from datetime import datetime, timedelta
+
 from app.models import Activity, Course, Module
 
 
@@ -44,6 +46,17 @@ def test_complete_activity_marks_it_completed(client, db) -> None:
     assert _find_activity(response.get_json(), "a1")["status"] == "completed"
 
 
+def test_complete_activity_sets_completed_at(client, db) -> None:
+    _seed_course_with_two_modules(db)
+    before = datetime.utcnow() - timedelta(seconds=5)
+
+    response = client.post("/api/activities/a1/complete")
+
+    completed_at = _find_activity(response.get_json(), "a1")["completedAt"]
+    assert completed_at is not None
+    assert datetime.fromisoformat(completed_at) >= before
+
+
 def test_completing_activity_does_not_lock_or_change_sibling_activities(client, db) -> None:
     # All of a module's activities are generated together and available from
     # the start; completing one must not cascade a lock/unlock onto others.
@@ -78,3 +91,43 @@ def test_complete_unknown_activity_returns_404(client, db) -> None:
     response = client.post("/api/activities/does-not-exist/complete")
 
     assert response.status_code == 404
+
+
+def test_completing_last_activity_of_non_final_module_leaves_stage_unchanged(client, db) -> None:
+    _seed_course_with_two_modules(db)
+    client.post("/api/activities/a1/complete")
+
+    response = client.post("/api/activities/a2/complete")
+
+    assert response.get_json()["stage"] == "active"
+
+
+def test_completing_non_last_activity_leaves_stage_unchanged(client, db) -> None:
+    _seed_course_with_two_modules(db)
+
+    response = client.post("/api/activities/a1/complete")
+
+    assert response.get_json()["stage"] == "active"
+
+
+def test_completing_last_activity_of_last_module_marks_course_completed(client, db) -> None:
+    course = Course(
+        id="c2", title="T", description="d", prerequisites=[],
+        estimated_timeline="1 week", thumbnail_url="x",
+    )
+    module = Module(
+        id="m3", position=0, title="M1", description="d",
+        estimated_timeline="1 week", status="in_progress", learning_outcomes=[],
+    )
+    module.activities = [
+        Activity(id="a3", position=0, activity_type="reading", title="A1", status="available"),
+    ]
+    course.modules = [module]
+    db.session.add(course)
+    db.session.commit()
+
+    response = client.post("/api/activities/a3/complete")
+
+    body = response.get_json()
+    assert _find_module(body, "m3")["status"] == "completed"
+    assert body["stage"] == "completed"

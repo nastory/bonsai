@@ -1,6 +1,6 @@
 """Routes for the learner's app-wide settings (a single row, not per-user)."""
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, abort, jsonify, request
 from flask.wrappers import Response
 
 from app.extensions import db
@@ -46,10 +46,23 @@ def update_settings() -> Response:
         settings.embedding_use_completion_credentials = body["embeddingUseCompletionCredentials"]
     if "embeddingApiKey" in body:
         settings.embedding_api_key = body["embeddingApiKey"]
+    if "imageGenerationModel" in body:
+        settings.image_generation_model = body["imageGenerationModel"]
+    if "imageGenerationUseCompletionCredentials" in body:
+        settings.image_generation_use_completion_credentials = body["imageGenerationUseCompletionCredentials"]
+    if "imageGenerationApiKey" in body:
+        settings.image_generation_api_key = body["imageGenerationApiKey"]
     if "tavilyApiKey" in body:
         settings.tavily_api_key = body["tavilyApiKey"]
     if "deepSearchEnabled" in body:
         settings.deep_search_enabled = body["deepSearchEnabled"]
+    if "visualAidsEnabled" in body:
+        settings.visual_aids_enabled = body["visualAidsEnabled"]
+    if "weeklyGoalActivities" in body:
+        goal = body["weeklyGoalActivities"]
+        if goal is not None and (not isinstance(goal, int) or isinstance(goal, bool) or goal < 1):
+            abort(400, description="weeklyGoalActivities must be a positive integer or null")
+        settings.weekly_goal_activities = goal
 
     model_provider = body.get("modelProvider", {})
     if "tier" in model_provider:

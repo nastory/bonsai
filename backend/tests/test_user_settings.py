@@ -11,6 +11,9 @@ def test_get_or_create_returns_defaults_on_first_call(db) -> None:
     assert settings.thumbnail_generation_enabled is True
     assert settings.model_provider_tier == "hosted"
     assert settings.deep_search_enabled is False
+    assert settings.weekly_goal_activities is None
+    assert settings.image_generation_model is None
+    assert settings.image_generation_use_completion_credentials is True
 
 
 def test_get_or_create_returns_the_same_row_on_subsequent_calls(db) -> None:

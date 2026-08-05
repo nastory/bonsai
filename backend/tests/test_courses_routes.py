@@ -86,3 +86,34 @@ def test_delete_course_returns_404_for_unknown_course(client, db) -> None:
     response = client.delete("/api/courses/does-not-exist")
 
     assert response.status_code == 404
+
+
+def test_get_course_thumbnail_returns_404_when_none_generated(client, db) -> None:
+    _seed_course(db)
+
+    response = client.get("/api/courses/gpu-programming/thumbnail")
+
+    assert response.status_code == 404
+
+
+def test_get_course_thumbnail_returns_404_for_unknown_course(client, db) -> None:
+    response = client.get("/api/courses/does-not-exist/thumbnail")
+
+    assert response.status_code == 404
+
+
+def test_get_course_thumbnail_serves_the_generated_image(client, db, app) -> None:
+    from app.services.thumbnail_storage import save_thumbnail_image
+
+    with app.app_context():
+        thumbnail_path = save_thumbnail_image("gpu-programming", b"fake-png-bytes")
+    _seed_course(db)
+    course = db.session.get(Course, "gpu-programming")
+    course.thumbnail_image_path = thumbnail_path
+    db.session.commit()
+
+    response = client.get("/api/courses/gpu-programming/thumbnail")
+
+    assert response.status_code == 200
+    assert response.data == b"fake-png-bytes"
+    assert response.mimetype == "image/png"

@@ -77,6 +77,8 @@ export function Settings() {
   const [tavilyKeyStatus, setTavilyKeyStatus] = useState<SaveStatus>('idle');
   const [embeddingApiKeyDraft, setEmbeddingApiKeyDraft] = useState('');
   const [embeddingApiKeyStatus, setEmbeddingApiKeyStatus] = useState<SaveStatus>('idle');
+  const [imageGenerationApiKeyDraft, setImageGenerationApiKeyDraft] = useState('');
+  const [imageGenerationApiKeyStatus, setImageGenerationApiKeyStatus] = useState<SaveStatus>('idle');
 
   // byomEndpoint/byomModel aren't secret, so it's fine to prefill and re-sync
   // when the fetched settings change, but still save on blur rather than per keystroke.
@@ -99,6 +101,18 @@ export function Settings() {
   useEffect(() => {
     setEmbeddingModelDraft(user.embeddingModel ?? '');
   }, [user.embeddingModel]);
+
+  const [imageGenerationModelDraft, setImageGenerationModelDraft] = useState(user.imageGenerationModel ?? '');
+  useEffect(() => {
+    setImageGenerationModelDraft(user.imageGenerationModel ?? '');
+  }, [user.imageGenerationModel]);
+
+  const [weeklyGoalDraft, setWeeklyGoalDraft] = useState(
+    user.weeklyGoalActivities != null ? String(user.weeklyGoalActivities) : '',
+  );
+  useEffect(() => {
+    setWeeklyGoalDraft(user.weeklyGoalActivities != null ? String(user.weeklyGoalActivities) : '');
+  }, [user.weeklyGoalActivities]);
 
   const saveApiKeyIfChanged = () => {
     if (!apiKeyDraft.trim()) return;
@@ -130,6 +144,16 @@ export function Settings() {
       .catch(() => setEmbeddingApiKeyStatus('error'));
   };
 
+  const saveImageGenerationApiKeyIfChanged = () => {
+    if (!imageGenerationApiKeyDraft.trim()) return;
+    updateUserSettings({ imageGenerationApiKey: imageGenerationApiKeyDraft.trim() })
+      .then(() => {
+        setImageGenerationApiKeyDraft('');
+        setImageGenerationApiKeyStatus('saved');
+      })
+      .catch(() => setImageGenerationApiKeyStatus('error'));
+  };
+
   const saveByomEndpointIfChanged = () => {
     if (byomEndpointDraft !== (modelProvider.byomEndpoint ?? '')) {
       save({ modelProvider: { byomEndpoint: byomEndpointDraft } });
@@ -151,6 +175,21 @@ export function Settings() {
   const saveEmbeddingModelIfChanged = () => {
     if (embeddingModelDraft !== (user.embeddingModel ?? '')) {
       save({ embeddingModel: embeddingModelDraft });
+    }
+  };
+
+  const saveImageGenerationModelIfChanged = () => {
+    if (imageGenerationModelDraft !== (user.imageGenerationModel ?? '')) {
+      save({ imageGenerationModel: imageGenerationModelDraft });
+    }
+  };
+
+  const saveWeeklyGoalIfChanged = () => {
+    const parsed = parseInt(weeklyGoalDraft, 10);
+    const next = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    if (next !== user.weeklyGoalActivities) {
+      save({ weeklyGoalActivities: next });
+      setWeeklyGoalDraft(next != null ? String(next) : '');
     }
   };
 
@@ -283,6 +322,68 @@ export function Settings() {
                 </>
               )}
             </div>
+
+            <div className="mt-2 border-t border-bonsai-border pt-3">
+              <p className="text-sm font-medium text-bonsai-text">Image generation model</p>
+              <p className="mt-0.5 text-xs text-bonsai-text-muted">
+                Powers real course thumbnail images (see the "Course thumbnails" toggle below). Only
+                OpenAI and Azure are supported for image generation today.
+              </p>
+              <Input
+                className="mt-2"
+                placeholder="Image generation model (e.g. dall-e-3)"
+                value={imageGenerationModelDraft}
+                onChange={(e) => setImageGenerationModelDraft(e.target.value)}
+                onBlur={saveImageGenerationModelIfChanged}
+              />
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-sm text-bonsai-text">Use the same API key for the image generation model</p>
+                <Toggle
+                  checked={user.imageGenerationUseCompletionCredentials}
+                  onChange={(imageGenerationUseCompletionCredentials) =>
+                    save({ imageGenerationUseCompletionCredentials })
+                  }
+                />
+              </div>
+              {!user.imageGenerationUseCompletionCredentials && (
+                <>
+                  <KeyInput
+                    status={imageGenerationApiKeyStatus}
+                    className="mt-3"
+                    type="password"
+                    placeholder={
+                      user.hasImageGenerationApiKey
+                        ? 'Enter a new key to replace the current one'
+                        : 'Image generation API key'
+                    }
+                    value={imageGenerationApiKeyDraft}
+                    onChange={(e) => {
+                      setImageGenerationApiKeyDraft(e.target.value);
+                      setImageGenerationApiKeyStatus('idle');
+                    }}
+                    onBlur={saveImageGenerationApiKeyIfChanged}
+                  />
+                  <p
+                    className={cn(
+                      'mt-2 text-xs',
+                      imageGenerationApiKeyStatus === 'saved'
+                        ? 'text-green-600'
+                        : imageGenerationApiKeyStatus === 'error'
+                          ? 'text-red-600'
+                          : 'text-bonsai-text-muted',
+                    )}
+                  >
+                    {imageGenerationApiKeyStatus === 'saved'
+                      ? 'Saved.'
+                      : imageGenerationApiKeyStatus === 'error'
+                        ? 'Failed to save — try again.'
+                        : user.hasImageGenerationApiKey
+                          ? 'A key is configured.'
+                          : 'No key set yet.'}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div className="mt-4 space-y-3">
@@ -368,6 +469,19 @@ export function Settings() {
             onChange={(deepSearchEnabled) => save({ deepSearchEnabled })}
           />
         </div>
+        <div className="mt-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-bonsai-text">In-course visual aids</p>
+            <p className="mt-0.5 text-xs text-bonsai-text-muted">
+              Illustrate reading activities with a relevant image, when one is available. Needs a
+              Tavily key above to do anything.
+            </p>
+          </div>
+          <Toggle
+            checked={user.visualAidsEnabled}
+            onChange={(visualAidsEnabled) => save({ visualAidsEnabled })}
+          />
+        </div>
       </Card>
 
       <Card className="mt-4">
@@ -375,7 +489,8 @@ export function Settings() {
           <div>
             <p className="font-semibold text-bonsai-text">Course thumbnails</p>
             <p className="mt-1 text-sm text-bonsai-text-muted">
-              Generate an image for each course. Turn off to save tokens.
+              Generate a real image for each course. Needs an image generation model configured above to
+              do anything — otherwise courses keep their default gradient thumbnail.
             </p>
           </div>
           <Toggle
@@ -383,6 +498,35 @@ export function Settings() {
             onChange={(thumbnailGenerationEnabled) => save({ thumbnailGenerationEnabled })}
           />
         </div>
+      </Card>
+
+      <Card className="mt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-bonsai-text">Learning Objectives</p>
+            <p className="mt-1 text-sm text-bonsai-text-muted">
+              Set a personal goal for how many activities to complete each week. Missing it carries no
+              penalty — it's just shown as progress on your Today dashboard.
+            </p>
+          </div>
+          <Toggle
+            checked={user.weeklyGoalActivities != null}
+            onChange={(enabled) => save({ weeklyGoalActivities: enabled ? 5 : null })}
+          />
+        </div>
+        {user.weeklyGoalActivities != null && (
+          <div className="mt-3 flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              className="w-24"
+              value={weeklyGoalDraft}
+              onChange={(e) => setWeeklyGoalDraft(e.target.value)}
+              onBlur={saveWeeklyGoalIfChanged}
+            />
+            <span className="text-sm text-bonsai-text-muted">activities per week</span>
+          </div>
+        )}
       </Card>
 
       <Card className="mt-4">

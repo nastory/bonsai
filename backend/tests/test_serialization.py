@@ -26,6 +26,7 @@ def test_activity_to_dict_uses_camel_case_and_type_field() -> None:
         "title": "What Is a GPU, Really?",
         "status": "completed",
         "estimatedMinutes": 15,
+        "completedAt": None,
     }
 
 

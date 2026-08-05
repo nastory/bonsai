@@ -28,6 +28,11 @@ class Course(db.Model):
     prerequisites = db.Column(db.JSON, nullable=False, default=list)
     estimated_timeline = db.Column(db.String, nullable=False)
     thumbnail_url = db.Column(db.String, nullable=False)
+    # Instance-relative path (see thumbnail_storage.py) to a generated
+    # thumbnail image, once one exists. None means "no image yet" (never
+    # generated, generation disabled/unconfigured, or it failed) - the
+    # frontend falls back to the thumbnail_url gradient in that case.
+    thumbnail_image_path = db.Column(db.String, nullable=True)
     # 'interview' -> 'outline_review' -> 'active' -> 'completed'. Courses
     # created directly (e.g. via seed.py) default to 'active' since they
     # already have a full outline; the creation flow sets 'interview' itself.
@@ -47,6 +52,13 @@ class Course(db.Model):
     # first document is ingested; a course with no source materials never
     # gets one.
     vector_index_path = db.Column(db.String, nullable=True)
+    # Opt-in: a document-grounded course normally skips web search entirely
+    # (the document is the whole source of truth). Set true, once a learner
+    # opts in on any document upload during the interview, module generation
+    # also searches the web to supplement the document rather than replacing
+    # it - see module_generation.py's _generate_activities_content(). OR'd
+    # in, not overwritten, across multiple uploads - once on, stays on.
+    web_search_supplement_enabled = db.Column(db.Boolean, nullable=False, default=False)
 
     modules = db.relationship(
         "Module",
@@ -99,6 +111,7 @@ class Course(db.Model):
             "prerequisites": self.prerequisites,
             "estimatedTimeline": self.estimated_timeline,
             "thumbnailUrl": self.thumbnail_url,
+            "thumbnailImageUrl": f"/api/courses/{self.id}/thumbnail" if self.thumbnail_image_path else None,
             "progressPercent": self.progress_percent,
             "stage": self.stage,
             "parentCourseId": self.parent_course_id,
@@ -160,6 +173,10 @@ class Activity(db.Model):
     status = db.Column(db.String, nullable=False, default="locked")
     estimated_minutes = db.Column(db.Integer, nullable=True)
     content_path = db.Column(db.String, nullable=True)
+    # Set when status flips to "completed" (see routes/activities.py). Nullable:
+    # never-completed activities have no value. Powers the Learning Objectives
+    # weekly-goal count, computed client-side from these timestamps.
+    completed_at = db.Column(db.DateTime, nullable=True)
 
     module = db.relationship("Module", back_populates="activities")
 
@@ -177,6 +194,7 @@ class Activity(db.Model):
             "title": self.title,
             "status": self.status,
             "estimatedMinutes": self.estimated_minutes,
+            "completedAt": self.completed_at.isoformat() if self.completed_at else None,
         }
         if self.content_path:
             from app.services.content_storage import load_activity_content
@@ -282,6 +300,28 @@ class UserSettings(db.Model):
     # Uses Tavily's "advanced" search_depth (slower, more thorough) instead
     # of the "basic" default for every module-generation search.
     deep_search_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    # Opt-in, credit-costly (extra Tavily image searches): after a reading
+    # activity's body is generated, an LLM pass flags spots where a real
+    # image would clarify a concept and splices one in - see
+    # module_generation.py. Needs a Tavily key to do anything; this toggle
+    # doesn't enforce that, same precedent as deep_search_enabled.
+    visual_aids_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    # Independently configurable from the completion model, same pattern as
+    # embedding_model above. Powers course thumbnail generation
+    # (see image_generation.py) via resolve_image_generation_config():
+    # BYOM reuses the completion model's endpoint the same way embeddings
+    # do, though litellm has no Ollama image-generation support today - a
+    # disclosed limitation, not a bug. thumbnail_generation_enabled (below)
+    # gates whether generation is attempted at all; this is what to
+    # generate with once it is.
+    image_generation_model = db.Column(db.String, nullable=True)
+    image_generation_use_completion_credentials = db.Column(db.Boolean, nullable=False, default=True)
+    image_generation_api_key = db.Column(db.String, nullable=True)
+    # Optional personal goal: how many activities the learner wants to
+    # complete each calendar week, shown as progress on the Today dashboard.
+    # None means no goal is set - also how a learner clears one, per the PRD
+    # ("a standing preference the learner can change or clear at any time").
+    weekly_goal_activities = db.Column(db.Integer, nullable=True)
 
     @classmethod
     def get_or_create(cls) -> "UserSettings":
@@ -319,6 +359,11 @@ class UserSettings(db.Model):
             "embeddingModel": self.embedding_model,
             "embeddingUseCompletionCredentials": self.embedding_use_completion_credentials,
             "hasEmbeddingApiKey": bool(self.embedding_api_key),
+            "imageGenerationModel": self.image_generation_model,
+            "imageGenerationUseCompletionCredentials": self.image_generation_use_completion_credentials,
+            "hasImageGenerationApiKey": bool(self.image_generation_api_key),
             "hasTavilyApiKey": bool(self.tavily_api_key),
             "deepSearchEnabled": self.deep_search_enabled,
+            "visualAidsEnabled": self.visual_aids_enabled,
+            "weeklyGoalActivities": self.weekly_goal_activities,
         }

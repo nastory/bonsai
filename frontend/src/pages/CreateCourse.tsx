@@ -4,6 +4,7 @@ import { ArrowRight, Loader2, Paperclip, X } from 'lucide-react';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { Toggle } from '../components/ui/Toggle';
 import { cn } from '../components/ui/cn';
 import { ApiError, startCourse, submitInterviewAnswer, generateOutline } from '../lib/api';
 
@@ -39,6 +40,7 @@ export function CreateCourse() {
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [supplementWithWebSearch, setSupplementWithWebSearch] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -75,11 +77,12 @@ export function CreateCourse() {
 
     try {
       const step = courseId
-        ? await submitInterviewAnswer(courseId, text, filesToSend)
-        : await startCourse(text, filesToSend, parentCourseId);
+        ? await submitInterviewAnswer(courseId, text, filesToSend, supplementWithWebSearch)
+        : await startCourse(text, filesToSend, parentCourseId, supplementWithWebSearch);
       if (!courseId) setCourseId(step.courseId);
       setQuestionsAnswered((n) => n + 1);
       setAttachedFiles([]);
+      setSupplementWithWebSearch(false);
 
       setMessages((prev) => {
         const base = hasFiles ? prev.slice(0, -1) : prev;
@@ -124,19 +127,25 @@ export function CreateCourse() {
       </div>
 
       {attachedFiles.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {attachedFiles.map((file, i) => (
-            <span
-              key={`${file.name}-${i}`}
-              className="flex items-center gap-2 rounded-full border border-bonsai-border bg-white px-3 py-1 text-xs text-bonsai-text"
-            >
-              <Paperclip className="h-3 w-3 text-bonsai-text-muted" />
-              {file.name}
-              <button onClick={() => removeFile(i)} aria-label={`Remove ${file.name}`}>
-                <X className="h-3 w-3 text-bonsai-text-muted hover:text-bonsai-text" />
-              </button>
-            </span>
-          ))}
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {attachedFiles.map((file, i) => (
+              <span
+                key={`${file.name}-${i}`}
+                className="flex items-center gap-2 rounded-full border border-bonsai-border bg-white px-3 py-1 text-xs text-bonsai-text"
+              >
+                <Paperclip className="h-3 w-3 text-bonsai-text-muted" />
+                {file.name}
+                <button onClick={() => removeFile(i)} aria-label={`Remove ${file.name}`}>
+                  <X className="h-3 w-3 text-bonsai-text-muted hover:text-bonsai-text" />
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-bonsai-border bg-white px-3 py-2">
+            <span className="text-xs text-bonsai-text">Also search the web to supplement this document</span>
+            <Toggle checked={supplementWithWebSearch} onChange={setSupplementWithWebSearch} />
+          </div>
         </div>
       )}
 

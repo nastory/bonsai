@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Check, ChevronRight } from 'lucide-react';
 import type { Course } from '../../types/course';
 import { ProgressBar } from '../ui/ProgressBar';
+import { Badge } from '../ui/Badge';
 import { InlineMarkdown } from '../ui/Markdown';
 import { cn } from '../ui/cn';
 
@@ -36,10 +37,19 @@ export function CourseCard({ course, selectable, selected, onToggleSelect }: Cou
         to={`/courses/${course.id}`}
         className="flex flex-1 items-center gap-4 rounded-xl border border-bonsai-border bg-white p-4 hover:bg-bonsai-cream"
       >
-        <div className={`h-14 w-14 shrink-0 rounded-lg bg-gradient-to-br ${course.thumbnailUrl}`} />
+        {course.thumbnailImageUrl ? (
+          <img
+            src={course.thumbnailImageUrl}
+            alt=""
+            className="h-14 w-14 shrink-0 rounded-lg object-cover"
+          />
+        ) : (
+          <div className={`h-14 w-14 shrink-0 rounded-lg bg-gradient-to-br ${course.thumbnailUrl}`} />
+        )}
         <div className="flex-1">
-          <p className="font-semibold text-bonsai-text">
+          <p className="flex items-center gap-2 font-semibold text-bonsai-text">
             <InlineMarkdown>{course.title}</InlineMarkdown>
+            {course.stage === 'completed' && <Badge>Completed</Badge>}
           </p>
           <p className="text-sm text-bonsai-text-muted">
             {course.modules.length} modules

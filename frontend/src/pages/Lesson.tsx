@@ -41,6 +41,7 @@ export function Lesson() {
   const isLastInModule = activityIndex === module.activities.length - 1;
   const nextActivity = !isLastInModule ? module.activities[activityIndex + 1] : undefined;
   const prevActivity = activityIndex > 0 ? module.activities[activityIndex - 1] : undefined;
+  const isLastModule = course.modules[course.modules.length - 1]?.id === module.id;
 
   const goToNextModuleOrHome = () => {
     const moduleIndex = course.modules.findIndex((m) => m.id === module.id);
@@ -140,10 +141,14 @@ export function Lesson() {
             setShowCompletionModal(false);
             navigate('/create', { state: { parentCourseId: course.id } });
           }}
-          onChangeThisCourse={() => {
-            setShowCompletionModal(false);
-            navigate(`/courses/${course.id}/modules/${module.id}/change-direction`);
-          }}
+          onChangeThisCourse={
+            isLastModule
+              ? undefined
+              : () => {
+                  setShowCompletionModal(false);
+                  navigate(`/courses/${course.id}/modules/${module.id}/change-direction`);
+                }
+          }
         />
       )}
     </div>

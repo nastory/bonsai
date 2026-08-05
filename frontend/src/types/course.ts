@@ -27,6 +27,8 @@ export interface Activity {
   title: string;
   status: ActivityStatus;
   estimatedMinutes?: number;
+  /** ISO timestamp of when this activity was marked completed; null until then. */
+  completedAt?: string | null;
   /** Reading/video body text, may include inline citation markers like [1]. */
   body?: string;
   citations?: Citation[];
@@ -70,6 +72,8 @@ export interface Course {
   prerequisites: string[];
   estimatedTimeline: string;
   thumbnailUrl: string;
+  /** URL to a real generated thumbnail image, when one exists. Falls back to the thumbnailUrl gradient otherwise. */
+  thumbnailImageUrl?: string | null;
   progressPercent: number;
   stage: CourseStage;
   /** Set when this course was created via "Branch Off" from another course. */
@@ -142,10 +146,20 @@ export interface UserSettings {
   embeddingUseCompletionCredentials: boolean;
   /** Whether a dedicated embedding API key is stored on the backend. The raw key is never sent back on read. */
   hasEmbeddingApiKey: boolean;
+  /** Independently configurable from the completion model, powers course thumbnail generation. */
+  imageGenerationModel?: string;
+  /** Hosted tier only: whether the image generation model reuses modelProvider's API key. */
+  imageGenerationUseCompletionCredentials: boolean;
+  /** Whether a dedicated image generation API key is stored on the backend. The raw key is never sent back on read. */
+  hasImageGenerationApiKey: boolean;
   /** Whether a Tavily key is stored on the backend. The raw key is never sent back on read. */
   hasTavilyApiKey: boolean;
   /** Uses Tavily's slower, more thorough "advanced" search mode for module-generation searches. */
   deepSearchEnabled: boolean;
+  /** Illustrates reading activities with a retrieved image, when one is available. Needs a Tavily key. */
+  visualAidsEnabled: boolean;
+  /** Optional personal goal: activities to complete each calendar week. Null means no goal is set. */
+  weeklyGoalActivities: number | null;
 }
 
 /**
@@ -169,7 +183,13 @@ export interface UserSettingsPatch {
   embeddingUseCompletionCredentials?: boolean;
   /** Write-only, like apiKey: sets a new embedding API key, never reads one back. */
   embeddingApiKey?: string;
+  imageGenerationModel?: string;
+  imageGenerationUseCompletionCredentials?: boolean;
+  /** Write-only, like apiKey: sets a new image generation API key, never reads one back. */
+  imageGenerationApiKey?: string;
   /** Write-only, like apiKey: sets a new Tavily key, never reads one back. */
   tavilyApiKey?: string;
   deepSearchEnabled?: boolean;
+  visualAidsEnabled?: boolean;
+  weeklyGoalActivities?: number | null;
 }

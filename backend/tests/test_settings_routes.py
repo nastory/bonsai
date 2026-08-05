@@ -159,3 +159,67 @@ def test_put_settings_partial_update_preserves_deep_search_enabled(client, db) -
     response = client.put("/api/settings", json={"name": "Nigel Story"})
 
     assert response.get_json()["deepSearchEnabled"] is True
+
+
+def test_get_settings_defaults_weekly_goal_to_none(client, db) -> None:
+    response = client.get("/api/settings")
+
+    assert response.get_json()["weeklyGoalActivities"] is None
+
+
+def test_put_settings_stores_weekly_goal(client, db) -> None:
+    response = client.put("/api/settings", json={"weeklyGoalActivities": 5})
+
+    assert response.status_code == 200
+    assert response.get_json()["weeklyGoalActivities"] == 5
+
+
+def test_put_settings_clears_weekly_goal(client, db) -> None:
+    client.put("/api/settings", json={"weeklyGoalActivities": 5})
+
+    response = client.put("/api/settings", json={"weeklyGoalActivities": None})
+
+    assert response.status_code == 200
+    assert response.get_json()["weeklyGoalActivities"] is None
+
+
+def test_put_settings_rejects_non_positive_weekly_goal(client, db) -> None:
+    response = client.put("/api/settings", json={"weeklyGoalActivities": 0})
+
+    assert response.status_code == 400
+
+
+def test_put_settings_partial_update_preserves_weekly_goal(client, db) -> None:
+    client.put("/api/settings", json={"weeklyGoalActivities": 5})
+
+    response = client.put("/api/settings", json={"name": "Nigel Story"})
+
+    assert response.get_json()["weeklyGoalActivities"] == 5
+
+
+def test_get_settings_defaults_image_generation_use_completion_credentials_to_true(client, db) -> None:
+    response = client.get("/api/settings")
+
+    assert response.get_json()["imageGenerationUseCompletionCredentials"] is True
+
+
+def test_put_settings_stores_image_generation_model(client, db) -> None:
+    response = client.put("/api/settings", json={"imageGenerationModel": "dall-e-3"})
+
+    assert response.status_code == 200
+    assert response.get_json()["imageGenerationModel"] == "dall-e-3"
+
+
+def test_put_settings_stores_image_generation_use_completion_credentials(client, db) -> None:
+    response = client.put("/api/settings", json={"imageGenerationUseCompletionCredentials": False})
+
+    assert response.get_json()["imageGenerationUseCompletionCredentials"] is False
+
+
+def test_put_settings_stores_image_generation_api_key_but_never_returns_it(client, db) -> None:
+    response = client.put("/api/settings", json={"imageGenerationApiKey": "sk-image-secret"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["hasImageGenerationApiKey"] is True
+    assert "imageGenerationApiKey" not in body

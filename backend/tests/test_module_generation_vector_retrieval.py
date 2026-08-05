@@ -4,8 +4,11 @@ When a course has a real vector index (Course.vector_index_path set - see
 vector_store.py), module generation retrieves each activity's most relevant
 chunks directly instead of dumping the whole document into every module's
 seed prompt, and never calls plan_activity_searches()/retrieve_for_module()
-(the web-search path) either. For the legacy fallback (source materials
-without a vector index), see test_module_generation_source_materials.py.
+(the web-search path) either - *unless* the course opted in to supplementing
+its document(s) with web search (Course.web_search_supplement_enabled), in
+which case both run and both end up in the same index. For the legacy
+fallback (source materials without a vector index), see
+test_module_generation_source_materials.py.
 """
 
 from app.extensions import db as _db
@@ -172,6 +175,51 @@ def test_vector_grounded_module_never_calls_search_planning_or_web_search(real_l
         result = generate_module_activities(module.id)
 
         assert result.activities[0].title == "Intro"
+
+
+def test_supplemented_document_course_also_calls_search_planning_and_web_search(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        module = _make_module_with_vector_index(monkeypatch)
+        module.course.web_search_supplement_enabled = True
+        UserSettings.get_or_create().tavily_api_key = "tvly-configured"
+        _db.session.commit()
+
+        search_planning_called = []
+        web_search_called = []
+
+        def fake_plan_activity_searches(module, model_config):
+            search_planning_called.append(True)
+            from app.services.llm_schemas import ActivitySearchPlanSchema, ModuleSearchPlanSchema
+
+            return ModuleSearchPlanSchema(
+                activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["GPU basics"])]
+            )
+
+        def fake_web_search(query, api_key, search_depth="basic"):
+            web_search_called.append(query)
+            return [{"title": "A GPU Primer", "url": "https://example.com/gpu-primer", "content": "GPUs are..."}]
+
+        monkeypatch.setattr("app.services.module_generation.plan_activity_searches", fake_plan_activity_searches)
+        monkeypatch.setattr("app.services.module_retrieval.web_search", fake_web_search)
+
+        canned = iter(
+            [
+                _FakeResponse('{"type": "reading", "title": "Intro", "estimatedMinutes": 10, "body": "b"}'),
+                _FakeResponse('{"digest": "Covered the basics."}'),
+            ]
+        )
+        monkeypatch.setattr("app.services.llm.litellm.completion", lambda **kwargs: next(canned))
+
+        result = generate_module_activities(module.id)
+
+        assert search_planning_called
+        assert web_search_called
+        # Both sources now in the same index: citations can include the
+        # pre-existing document chunk and/or the freshly-supplemented web one.
+        labels = {c["label"] for c in result.activities[0].to_dict()["citations"]}
+        assert any("A GPU Primer" in label for label in labels) or any(
+            label.startswith("paper.pdf") for label in labels
+        )
 
 
 def test_vector_grounded_module_seed_prompt_has_no_whole_document_block(real_llm_app, monkeypatch) -> None:
