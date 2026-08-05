@@ -144,5 +144,9 @@ def _mock_search_plan(module: Module) -> ModuleSearchPlanSchema:
         activities=[
             ActivitySearchPlanSchema(activityIndex=i, terms=[f"[MOCK] {a['title']}"])
             for i, a in enumerate(module.activity_plan)
-        ]
+        ],
+        # Mocks never suggest a video - kept deterministic and free, same as
+        # every other LLM_TEST_MODE branch in this codebase.
+        videoSearchQuery="",
+        videoPosition=0,
     )

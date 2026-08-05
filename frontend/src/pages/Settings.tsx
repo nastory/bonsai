@@ -486,6 +486,19 @@ export function Settings() {
             onChange={(visualAidsEnabled) => save({ visualAidsEnabled })}
           />
         </div>
+        <div className="mt-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-bonsai-text">Video embedding</p>
+            <p className="mt-0.5 text-xs text-bonsai-text-muted">
+              Try to include one relevant YouTube video per module, when a good match is found. Needs
+              a Tavily key above to do anything.
+            </p>
+          </div>
+          <Toggle
+            checked={user.videoEmbeddingEnabled}
+            onChange={(videoEmbeddingEnabled) => save({ videoEmbeddingEnabled })}
+          />
+        </div>
       </Card>
 
       <Card className="mt-4">

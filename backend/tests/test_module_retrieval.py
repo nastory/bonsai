@@ -59,6 +59,32 @@ def test_plan_activity_searches_mock_covers_every_activity_index(db) -> None:
     assert {a.activityIndex for a in plan.activities} == {0, 1}
 
 
+def test_plan_activity_searches_mock_never_suggests_a_video(db) -> None:
+    module = _make_module()
+
+    plan = plan_activity_searches(module, model_config={"model": "test"})
+
+    assert plan.videoSearchQuery == ""
+    assert plan.videoPosition == 0
+
+
+def test_plan_activity_searches_parses_video_fields_from_real_response(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        module = _make_module()
+        monkeypatch.setattr(
+            "app.services.llm.litellm.completion",
+            lambda **kwargs: _FakeResponse(
+                '{"activities": [{"activityIndex": 0, "terms": []}, {"activityIndex": 1, "terms": []}], '
+                '"videoSearchQuery": "GPU warp scheduling explained", "videoPosition": 1}'
+            ),
+        )
+
+        plan = plan_activity_searches(module, model_config={"model": "test"})
+
+        assert plan.videoSearchQuery == "GPU warp scheduling explained"
+        assert plan.videoPosition == 1
+
+
 def test_plan_activity_searches_parses_real_response(real_llm_app, monkeypatch) -> None:
     with real_llm_app.app_context():
         module = _make_module()
@@ -66,7 +92,8 @@ def test_plan_activity_searches_parses_real_response(real_llm_app, monkeypatch) 
             "app.services.llm.litellm.completion",
             lambda **kwargs: _FakeResponse(
                 '{"activities": [{"activityIndex": 0, "terms": ["GPU basics"]}, '
-                '{"activityIndex": 1, "terms": []}]}'
+                '{"activityIndex": 1, "terms": []}], '
+                '"videoSearchQuery": "", "videoPosition": 0}'
             ),
         )
 
@@ -81,7 +108,10 @@ def test_plan_activity_searches_raises_when_an_activity_index_is_missing(real_ll
         module = _make_module()
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"activities": [{"activityIndex": 0, "terms": ["GPU basics"]}]}'),
+            lambda **kwargs: _FakeResponse(
+                '{"activities": [{"activityIndex": 0, "terms": ["GPU basics"]}], '
+                '"videoSearchQuery": "", "videoPosition": 0}'
+            ),
         )
 
         with pytest.raises(LLMOutputValidationError):
@@ -94,7 +124,8 @@ def test_plan_activity_searches_raises_for_out_of_range_index(real_llm_app, monk
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
             lambda **kwargs: _FakeResponse(
-                '{"activities": [{"activityIndex": 0, "terms": []}, {"activityIndex": 5, "terms": []}]}'
+                '{"activities": [{"activityIndex": 0, "terms": []}, {"activityIndex": 5, "terms": []}], '
+                '"videoSearchQuery": "", "videoPosition": 0}'
             ),
         )
 
@@ -123,7 +154,11 @@ def test_retrieve_for_module_returns_results_per_activity_with_tavily_key(db) ->
 
 def test_retrieve_for_module_dedupes_results_by_url(db, monkeypatch) -> None:
     module = _make_module(activity_plan=[{"type": "reading", "title": "T", "plan": "p"}])
-    plan = ModuleSearchPlanSchema(activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["term a", "term b"])])
+    plan = ModuleSearchPlanSchema(
+        activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["term a", "term b"])],
+        videoSearchQuery="",
+        videoPosition=0,
+    )
 
     monkeypatch.setattr(
         "app.services.module_retrieval.web_search",
@@ -139,7 +174,11 @@ def test_retrieve_for_module_dedupes_results_by_url(db, monkeypatch) -> None:
 
 def test_retrieve_for_module_caps_results_per_activity(db, monkeypatch) -> None:
     module = _make_module(activity_plan=[{"type": "reading", "title": "T", "plan": "p"}])
-    plan = ModuleSearchPlanSchema(activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["a", "b", "c"])])
+    plan = ModuleSearchPlanSchema(
+        activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["a", "b", "c"])],
+        videoSearchQuery="",
+        videoPosition=0,
+    )
 
     monkeypatch.setattr(
         "app.services.module_retrieval.web_search",
@@ -156,7 +195,11 @@ def test_retrieve_for_module_caps_results_per_activity(db, monkeypatch) -> None:
 
 def test_retrieve_for_module_passes_deep_search_flag_as_search_depth(db, monkeypatch) -> None:
     module = _make_module(activity_plan=[{"type": "reading", "title": "T", "plan": "p"}])
-    plan = ModuleSearchPlanSchema(activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["a"])])
+    plan = ModuleSearchPlanSchema(
+        activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["a"])],
+        videoSearchQuery="",
+        videoPosition=0,
+    )
     captured: dict = {}
 
     def fake_web_search(query, api_key, search_depth="basic"):
@@ -172,7 +215,11 @@ def test_retrieve_for_module_passes_deep_search_flag_as_search_depth(db, monkeyp
 
 def test_retrieve_for_module_gives_empty_list_to_activity_with_no_search_terms(db) -> None:
     module = _make_module(activity_plan=[{"type": "discussion", "title": "T", "plan": "p"}])
-    plan = ModuleSearchPlanSchema(activities=[ActivitySearchPlanSchema(activityIndex=0, terms=[])])
+    plan = ModuleSearchPlanSchema(
+        activities=[ActivitySearchPlanSchema(activityIndex=0, terms=[])],
+        videoSearchQuery="",
+        videoPosition=0,
+    )
 
     results = retrieve_for_module(module, plan, tavily_api_key="tvly-test", deep_search=False)
 
@@ -181,7 +228,7 @@ def test_retrieve_for_module_gives_empty_list_to_activity_with_no_search_terms(d
 
 def test_retrieve_for_module_returns_empty_dict_for_empty_search_plan(db) -> None:
     module = _make_module()
-    plan = ModuleSearchPlanSchema(activities=[])
+    plan = ModuleSearchPlanSchema(activities=[], videoSearchQuery="", videoPosition=0)
 
     results = retrieve_for_module(module, plan, tavily_api_key="tvly-test", deep_search=False)
 
@@ -205,7 +252,9 @@ def test_retrieve_for_module_searches_activities_concurrently(db, monkeypatch) -
             ActivitySearchPlanSchema(activityIndex=0, terms=["a"]),
             ActivitySearchPlanSchema(activityIndex=1, terms=["b"]),
             ActivitySearchPlanSchema(activityIndex=2, terms=["c"]),
-        ]
+        ],
+        videoSearchQuery="",
+        videoPosition=0,
     )
 
     def slow_web_search(query, api_key, search_depth="basic"):

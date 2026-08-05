@@ -29,9 +29,13 @@ export interface Activity {
   estimatedMinutes?: number;
   /** ISO timestamp of when this activity was marked completed; null until then. */
   completedAt?: string | null;
-  /** Reading/video body text, may include inline citation markers like [1]. */
+  /** Reading body text, may include inline citation markers like [1]. */
   body?: string;
   citations?: Citation[];
+  /** Video-specific fields — a real YouTube embed, not AI-generated video. */
+  videoUrl?: string;
+  videoId?: string;
+  caption?: string;
   /** Quiz-specific fields. */
   question?: string;
   options?: string[];
@@ -158,6 +162,8 @@ export interface UserSettings {
   deepSearchEnabled: boolean;
   /** Illustrates reading activities with a retrieved image, when one is available. Needs a Tavily key. */
   visualAidsEnabled: boolean;
+  /** Tries to add one relevant YouTube video activity per module, when a good match is found. Needs a Tavily key. */
+  videoEmbeddingEnabled: boolean;
   /** Optional personal goal: activities to complete each calendar week. Null means no goal is set. */
   weeklyGoalActivities: number | null;
 }
@@ -191,5 +197,6 @@ export interface UserSettingsPatch {
   tavilyApiKey?: string;
   deepSearchEnabled?: boolean;
   visualAidsEnabled?: boolean;
+  videoEmbeddingEnabled?: boolean;
   weeklyGoalActivities?: number | null;
 }

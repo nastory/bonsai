@@ -8,7 +8,14 @@ credits during day-to-day development or the test suite.
 import pytest
 from flask import Flask
 
-from app.services.retrieval import RetrievalError, fetch_page, image_search, web_search
+from app.services.retrieval import (
+    RetrievalError,
+    extract_youtube_video_id,
+    fetch_page,
+    image_search,
+    video_search,
+    web_search,
+)
 
 
 class _FakeResponse:
@@ -202,3 +209,83 @@ def test_image_search_raises_retrieval_error_on_http_failure(monkeypatch) -> Non
 
     with real_app.app_context(), pytest.raises(RetrievalError):
         image_search("bonsai wiring diagram", api_key="bad-key")
+
+
+def test_video_search_returns_canned_result_in_test_mode(app: Flask) -> None:
+    with app.app_context():
+        results = video_search("wiring a bonsai branch", api_key="tvly-test")
+
+    assert len(results) >= 1
+    assert all({"title", "url", "content"} <= result.keys() for result in results)
+    assert extract_youtube_video_id(results[0]["url"]) is not None
+
+
+def test_video_search_restricts_to_youtube_domains(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        return _FakeResponse(
+            200,
+            {
+                "results": [
+                    {
+                        "title": "Wiring a Bonsai Branch",
+                        "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                        "content": "A tutorial on wiring branches.",
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr("app.services.retrieval.requests.post", fake_post)
+
+    with real_app.app_context():
+        results = video_search("wiring a bonsai branch", api_key="tvly-real", max_results=3)
+
+    assert captured["url"] == "https://api.tavily.com/search"
+    assert captured["json"] == {
+        "api_key": "tvly-real",
+        "query": "wiring a bonsai branch",
+        "max_results": 3,
+        "include_domains": ["youtube.com", "youtu.be"],
+    }
+    assert results == [
+        {
+            "title": "Wiring a Bonsai Branch",
+            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "content": "A tutorial on wiring branches.",
+        }
+    ]
+
+
+def test_video_search_raises_retrieval_error_on_http_failure(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    monkeypatch.setattr(
+        "app.services.retrieval.requests.post", lambda *a, **kw: _FakeResponse(401, {"error": "bad key"})
+    )
+
+    with real_app.app_context(), pytest.raises(RetrievalError):
+        video_search("wiring a bonsai branch", api_key="bad-key")
+
+
+@pytest.mark.parametrize(
+    "url,expected_id",
+    [
+        ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+        ("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s", "dQw4w9WgXcQ"),
+        ("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+        ("https://www.youtube.com/shorts/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+        ("https://www.youtube.com/channel/UC1234567890", None),
+        ("https://www.youtube.com/playlist?list=PL1234567890", None),
+        ("https://example.com/not-youtube", None),
+    ],
+)
+def test_extract_youtube_video_id(url: str, expected_id: str | None) -> None:
+    assert extract_youtube_video_id(url) == expected_id

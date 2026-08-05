@@ -21,6 +21,7 @@ const DEFAULT_USER: UserSettings = {
   hasTavilyApiKey: false,
   deepSearchEnabled: false,
   visualAidsEnabled: false,
+  videoEmbeddingEnabled: false,
   weeklyGoalActivities: null,
 };
 

@@ -76,7 +76,7 @@ def test_generate_module_activities_raises_when_search_plan_omits_an_activity_in
         module = _make_module()
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"activities": []}'),
+            lambda **kwargs: _FakeResponse('{"activities": [], "videoSearchQuery": "", "videoPosition": 0}'),
         )
 
         with pytest.raises(LLMOutputValidationError):
@@ -90,7 +90,10 @@ def test_generate_module_activities_raises_when_activity_response_is_invalid_jso
         module = _make_module()
         responses = iter(
             [
-                _FakeResponse('{"activities": [{"activityIndex": 0, "terms": []}]}'),
+                _FakeResponse(
+                    '{"activities": [{"activityIndex": 0, "terms": []}], '
+                    '"videoSearchQuery": "", "videoPosition": 0}'
+                ),
                 _FakeResponse("not json at all"),
             ]
         )
@@ -107,7 +110,10 @@ def test_generate_module_activities_raises_when_activity_response_omits_required
         module = _make_module()
         responses = iter(
             [
-                _FakeResponse('{"activities": [{"activityIndex": 0, "terms": []}]}'),
+                _FakeResponse(
+                    '{"activities": [{"activityIndex": 0, "terms": []}], '
+                    '"videoSearchQuery": "", "videoPosition": 0}'
+                ),
                 _FakeResponse('{"title": "Missing type and estimatedMinutes"}'),
             ]
         )

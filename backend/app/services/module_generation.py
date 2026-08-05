@@ -41,6 +41,7 @@ vector_store.py) - only the number of retrieved chunks per activity, a
 small fixed cap, affects prompt size now, not the source document's length.
 """
 
+from dataclasses import dataclass
 from uuid import uuid4
 
 from flask import current_app
@@ -56,13 +57,15 @@ from app.services.llm_schemas import (
     GeneratedActivitySchema,
     GeneratedQuizActivityDecodingSchema,
     ModuleDigestSchema,
+    ModuleSearchPlanSchema,
+    VideoSelectionSchema,
     VisualAidPlanSchema,
     validate_llm_json,
 )
 from app.services.model_selection import EmbeddingNotConfiguredError, resolve_embedding_config, resolve_model_config
 from app.services.module_retrieval import plan_activity_searches, retrieve_for_module
 from app.services.prompts import load_prompt
-from app.services.retrieval import image_search
+from app.services.retrieval import extract_youtube_video_id, image_search, video_search
 from app.services.vector_store import build_or_update_index
 from app.services.vector_store import query as query_vector_store
 
@@ -70,6 +73,27 @@ from app.services.vector_store import query as query_vector_store
 # MAX_RESULTS_PER_ACTIVITY (3) for the web-search path: enough for a
 # well-grounded activity without flooding the generation prompt.
 MAX_CHUNKS_PER_ACTIVITY = 4
+
+# Tavily has no video-duration field, so a video activity's estimatedMinutes
+# is a fixed guess, not a pretense of knowing the real length.
+VIDEO_ESTIMATED_MINUTES = 8
+
+
+@dataclass
+class _ActivitySpec:
+    """A resolved activity, ready to persist as a real Activity row.
+
+    Bridges GeneratedActivitySchema-based text activities and the
+    code-built video activity (which never flows through that schema - see
+    _maybe_build_video_spec()) into one uniform shape, so
+    generate_module_activities()'s persistence step doesn't need to care
+    which path an activity came from.
+    """
+
+    type: str
+    title: str
+    estimated_minutes: int
+    content: dict
 
 
 class ModuleNotFoundError(Exception):
@@ -96,7 +120,12 @@ def generate_module_activities(module_id: str) -> Module:
     if module.activities:
         return module
 
-    generated = _generate_activities_content(module)
+    generated, video_result = _generate_activities_content(module)
+    specs = [_generated_to_spec(a) for a in generated]
+    if video_result is not None:
+        video_spec, position = video_result
+        specs.insert(position, video_spec)
+
     # All available, never locked: a module's activities are generated
     # together in this one call, so there's no such thing as "generated but
     # not reachable yet" for an activity the way there is for a module that
@@ -105,22 +134,30 @@ def generate_module_activities(module_id: str) -> Module:
         Activity(
             id=str(uuid4()),
             position=i,
-            activity_type=a.type,
-            title=a.title,
+            activity_type=spec.type,
+            title=spec.title,
             status="available",
-            estimated_minutes=a.estimatedMinutes,
+            estimated_minutes=spec.estimated_minutes,
         )
-        for i, a in enumerate(generated)
+        for i, spec in enumerate(specs)
     ]
 
-    for activity, a in zip(activities, generated):
-        content = a.model_dump(exclude={"type", "title", "estimatedMinutes"})
-        activity.content_path = save_activity_content(activity.id, content)
+    for activity, spec in zip(activities, specs):
+        activity.content_path = save_activity_content(activity.id, spec.content)
 
     module.activities = activities
     _generate_and_persist_digest(module)
     db.session.commit()
     return module
+
+
+def _generated_to_spec(a: GeneratedActivitySchema) -> _ActivitySpec:
+    return _ActivitySpec(
+        type=a.type,
+        title=a.title,
+        estimated_minutes=a.estimatedMinutes,
+        content=a.model_dump(exclude={"type", "title", "estimatedMinutes"}),
+    )
 
 
 def _try_resolve_embedding_config() -> dict | None:
@@ -144,14 +181,32 @@ def _get_module_or_raise(module_id: str) -> Module:
     return module
 
 
-def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema]:
+def _generate_activities_content(
+    module: Module,
+) -> tuple[list[GeneratedActivitySchema], tuple[_ActivitySpec, int] | None]:
     if current_app.config.get("LLM_TEST_MODE"):
-        return _mock_activities(module)
+        return _mock_activities(module), None
 
     model_config = resolve_model_config()
     embedding_config = _try_resolve_embedding_config()
+    settings = UserSettings.get_or_create()
     results_by_activity: dict[int, list[dict]] = {}
     citations_by_activity: dict[int, list[CitationSchema]] = {}
+
+    # Video embedding is independent of grounding source (it's never
+    # chunked/embedded into the RAG vector store), so the search-plan call
+    # needs to run even for a purely document-grounded course that would
+    # otherwise skip it entirely - the one case where enabling the toggle
+    # adds a genuinely new LLM call, rather than piggybacking on one that
+    # was already going to happen.
+    needs_search_plan = (
+        not module.course.source_materials
+        or module.course.web_search_supplement_enabled
+        or settings.video_embedding_enabled
+    )
+    search_plan: ModuleSearchPlanSchema | None = None
+    if needs_search_plan:
+        search_plan = plan_activity_searches(module, model_config)
 
     if not module.course.source_materials or module.course.web_search_supplement_enabled:
         # Web-grounded, or a document-grounded course that opted in to
@@ -163,8 +218,6 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
         # embedding alone) - planned unconditionally, even without a Tavily
         # key configured (retrieve_for_module() already returns empty
         # results for every activity in that case).
-        settings = UserSettings.get_or_create()
-        search_plan = plan_activity_searches(module, model_config)
         search_results = retrieve_for_module(
             module, search_plan, settings.tavily_api_key, settings.deep_search_enabled
         )
@@ -231,6 +284,8 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
     # _module_seed_data_message()'s own legacy whole-document fallback below
     # instead of leaving these activities completely ungrounded.
 
+    video_result = _maybe_build_video_spec(module, search_plan, model_config, settings)
+
     use_raw_source_materials = bool(module.course.source_materials) and not (
         module.course.vector_index_path and embedding_config
     )
@@ -263,13 +318,12 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
                 # - same reasoning as correctAnswerIndex replacing
                 # text-matching for quizzes.
                 parsed = parsed.model_copy(update={"citations": citations_by_activity[i]})
-            settings = UserSettings.get_or_create()
             if settings.visual_aids_enabled and settings.tavily_api_key:
                 parsed = _add_visual_aids(parsed, model_config, settings.tavily_api_key)
         generated.append(parsed)
         messages.append({"role": "assistant", "content": raw})
 
-    return generated
+    return generated, video_result
 
 
 def _chunk_citation_label(chunk: Chunk) -> str:
@@ -326,6 +380,82 @@ def _plan_visual_aids(body: str, model_config: dict) -> VisualAidPlanSchema:
     ]
     raw = complete(messages=messages, schema=VisualAidPlanSchema, **model_config)
     return validate_llm_json(raw, VisualAidPlanSchema)
+
+
+def _maybe_build_video_spec(
+    module: Module,
+    search_plan: ModuleSearchPlanSchema | None,
+    model_config: dict,
+    settings: UserSettings,
+) -> tuple[_ActivitySpec, int] | None:
+    """Best-effort: find and select one relevant YouTube video for this module.
+
+    Only attempted when UserSettings.video_embedding_enabled and a Tavily
+    key are both set, and the search-plan call actually suggested a query
+    (see ModuleSearchPlanSchema.videoSearchQuery) - most modules won't get
+    one, which is the intended "try to include, don't force it" behavior,
+    not a degraded case. Graceful degradation throughout, same precedent as
+    _add_visual_aids(): no candidate with a real parseable video id, or the
+    model declining every candidate, just means no video this module, not
+    an error.
+
+    Args:
+        module: The module being generated.
+        search_plan: The module's search plan, or None if it was never
+            computed (video embedding off and this course didn't otherwise
+            need one - see _generate_activities_content()).
+        model_config: Resolved completion model settings.
+        settings: The learner's current UserSettings row.
+
+    Returns:
+        A (spec, position) pair, where position is the 0-based index (in
+        the module's final activity list) to insert the video at, clamped
+        to a valid range - or None if no video should be added.
+    """
+    if search_plan is None or not settings.video_embedding_enabled or not settings.tavily_api_key:
+        return None
+    if not search_plan.videoSearchQuery:
+        return None
+
+    candidates = [
+        c
+        for c in video_search(search_plan.videoSearchQuery, settings.tavily_api_key)
+        if extract_youtube_video_id(c["url"])
+    ]
+    if not candidates:
+        return None
+
+    selection = _select_video(candidates, module, model_config)
+    if not (0 <= selection.selectedIndex < len(candidates)):
+        return None
+
+    chosen = candidates[selection.selectedIndex]
+    video_id = extract_youtube_video_id(chosen["url"])
+    spec = _ActivitySpec(
+        type="video",
+        title=chosen["title"] or "Watch this video",
+        estimated_minutes=VIDEO_ESTIMATED_MINUTES,
+        content={"videoUrl": chosen["url"], "videoId": video_id, "caption": selection.caption},
+    )
+    position = max(0, min(search_plan.videoPosition, len(module.activity_plan)))
+    return spec, position
+
+
+def _select_video(candidates: list[dict], module: Module, model_config: dict) -> VideoSelectionSchema:
+    if current_app.config.get("LLM_TEST_MODE"):
+        return VideoSelectionSchema(selectedIndex=-1, caption="")
+
+    messages = [
+        {"role": "system", "content": load_prompt("module_video_selection")},
+        {"role": "user", "content": _video_selection_data_message(module, candidates)},
+    ]
+    raw = complete(messages=messages, schema=VideoSelectionSchema, **model_config)
+    return validate_llm_json(raw, VideoSelectionSchema)
+
+
+def _video_selection_data_message(module: Module, candidates: list[dict]) -> str:
+    candidate_lines = "\n".join(f"{i}. {c['title']}: {c['content']}" for i, c in enumerate(candidates))
+    return f"Module: {module.title}\n{module.description}\n\nCandidate videos:\n{candidate_lines}"
 
 
 def _module_seed_data_message(module: Module, use_raw_source_materials: bool) -> str:
@@ -408,7 +538,9 @@ def _format_generated_activities(module: Module) -> str:
     lines = []
     for activity in module.activities:
         content = activity.to_dict()
-        text = content.get("body") or content.get("prompt") or content.get("question") or ""
+        # "caption" covers a video activity, which has neither body/prompt/
+        # question - see _maybe_build_video_spec()'s content shape.
+        text = content.get("body") or content.get("prompt") or content.get("question") or content.get("caption") or ""
         lines.append(f"- [{activity.activity_type}] {activity.title}: {text[:300]}")
     return "\n".join(lines)
 

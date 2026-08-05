@@ -141,9 +141,24 @@ class ModuleSearchPlanSchema(BaseModel):
     app/services/module_retrieval.py's plan_activity_searches(), which
     validates the returned index set exactly covers the planned activities
     before this is trusted.
+
+    videoSearchQuery/videoPosition piggyback a best-effort, once-per-module
+    video-embedding suggestion onto this same call (see module_generation.py's
+    _maybe_build_video_spec()) rather than a dedicated LLM call. Both are
+    unconditionally required plain fields with sentinel values, not an
+    Optional pair guarded by a validator — schema-constrained decoding has
+    already been shown (see InterviewStepSchema's history) to not enforce a
+    validator's conditional-requirement logic, only a field's own required-ness.
     """
 
     activities: list[ActivitySearchPlanSchema]
+    # Empty string means "no good video fits this module" — most modules
+    # shouldn't get one, this isn't a forced slot.
+    videoSearchQuery: str
+    # 0-based index in the module's *final* activity list (after any video
+    # insertion) where the video belongs. Ignored when videoSearchQuery is
+    # empty. Clamped defensively by the caller, never trusted raw.
+    videoPosition: int
 
 
 class CitationSchema(BaseModel):
@@ -303,6 +318,23 @@ class VisualAidPlanSchema(BaseModel):
     """
 
     aids: list[VisualAidSchema] = Field(default_factory=list)
+
+
+class VideoSelectionSchema(BaseModel):
+    """Expected shape of a module_video_selection.md response.
+
+    Generated once per module, only when a video search actually turned up
+    candidates worth choosing among (see module_generation.py's
+    _select_video()) - the model picks which of a few real Tavily results is
+    the best fit and writes a caption, rather than being trusted to author a
+    video url/id itself. Both fields are unconditionally required plain
+    values, not an Optional pair - `selectedIndex: -1` is the "none of these
+    are a good fit" sentinel, same reasoning as ModuleSearchPlanSchema's
+    videoSearchQuery/videoPosition above.
+    """
+
+    selectedIndex: int
+    caption: str
 
 
 def validate_llm_json(raw: str, schema: type[BaseModel]) -> BaseModel:

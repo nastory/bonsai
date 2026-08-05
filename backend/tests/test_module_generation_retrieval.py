@@ -71,7 +71,8 @@ def _make_module() -> Module:
 
 def _mock_completion(captured_prompts: list) -> callable:
     canned = [
-        '{"activities": [{"activityIndex": 0, "terms": ["GPU basics"]}]}',
+        '{"activities": [{"activityIndex": 0, "terms": ["GPU basics"]}], '
+        '"videoSearchQuery": "", "videoPosition": 0}',
         '{"type": "reading", "title": "Intro", "estimatedMinutes": 10, "body": "b"}',
         '{"digest": "Covered the basics."}',
     ]

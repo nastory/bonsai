@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { PlayCircle } from 'lucide-react';
 import type { Activity } from '../../types/course';
 import { useAppData } from '../../context/AppDataContext';
 import { getFeedbackMessage } from '../../lib/feedback';
@@ -37,6 +36,30 @@ function Citations({ citations }: { citations: NonNullable<Activity['citations']
         </li>
       ))}
     </ul>
+  );
+}
+
+function VideoBlock({ activity }: { activity: Activity }) {
+  if (!activity.videoId) {
+    return null;
+  }
+  return (
+    <figure>
+      <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
+        <iframe
+          className="h-full w-full"
+          src={`https://www.youtube.com/embed/${activity.videoId}`}
+          title={activity.title}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+      {activity.caption && (
+        <figcaption className="mt-2 text-sm text-bonsai-text-muted">
+          <InlineMarkdown>{activity.caption}</InlineMarkdown>
+        </figcaption>
+      )}
+    </figure>
   );
 }
 
@@ -193,12 +216,7 @@ export function ActivityCard({ activity }: { activity: Activity }) {
         </>
       )}
 
-      {activity.type === 'video' && (
-        <div className="flex flex-col items-center justify-center rounded-lg bg-bonsai-cream py-16 text-center">
-          <PlayCircle className="h-10 w-10 text-bonsai-text-muted" />
-          <p className="mt-3 text-sm text-bonsai-text-muted">Video embedding arrives in Phase 2.</p>
-        </div>
-      )}
+      {activity.type === 'video' && <VideoBlock activity={activity} />}
 
       {(activity.type === 'quiz' || activity.type === 'assessment') && (
         <QuizBlock activity={activity} />

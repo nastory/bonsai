@@ -192,7 +192,9 @@ def test_supplemented_document_course_also_calls_search_planning_and_web_search(
             from app.services.llm_schemas import ActivitySearchPlanSchema, ModuleSearchPlanSchema
 
             return ModuleSearchPlanSchema(
-                activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["GPU basics"])]
+                activities=[ActivitySearchPlanSchema(activityIndex=0, terms=["GPU basics"])],
+                videoSearchQuery="",
+                videoPosition=0,
             )
 
         def fake_web_search(query, api_key, search_depth="basic"):

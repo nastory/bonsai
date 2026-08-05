@@ -8,10 +8,16 @@ For the normal, current path (a real vector index present), see
 test_module_generation_vector_retrieval.py - that one grounds each activity
 in retrieved chunks rather than the whole document text, and never calls
 plan_activity_searches()/retrieve_for_module() either.
+
+One exception to "never calls plan_activity_searches()": when
+UserSettings.video_embedding_enabled is on, that call still runs even for a
+document-grounded course, purely to get a video search query/position - see
+test_video_embedding_still_runs_search_planning_when_enabled below and
+module_generation.py's _generate_activities_content()/needs_search_plan.
 """
 
 from app.extensions import db as _db
-from app.models import Course, Module, SourceMaterial
+from app.models import Course, Module, SourceMaterial, UserSettings
 from app.services.module_generation import generate_module_activities
 from app.services.source_material_storage import save_source_material_text
 
@@ -81,6 +87,49 @@ def test_document_grounded_module_never_calls_search_planning_or_web_search(real
         result = generate_module_activities(module.id)
 
         assert result.activities[0].title == "Intro"
+
+
+def test_video_embedding_still_runs_search_planning_when_enabled(real_llm_app, monkeypatch) -> None:
+    """Video embedding is independent of grounding source (never chunked/embedded
+
+    into the RAG vector store), so a purely document-grounded course still
+    needs the search-plan call for a video suggestion when the toggle is
+    on - the one case where enabling it adds a genuinely new LLM call for a
+    course that would otherwise skip search planning entirely.
+    """
+    with real_llm_app.app_context():
+        settings = UserSettings.get_or_create()
+        settings.video_embedding_enabled = True
+        settings.tavily_api_key = "tvly-configured"
+        _db.session.commit()
+        module = _make_module_with_source_material()
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("web_search should not be called for a document-grounded course")
+
+        monkeypatch.setattr("app.services.module_retrieval.web_search", fail_if_called)
+        monkeypatch.setattr(
+            "app.services.module_generation.video_search",
+            lambda query, api_key: [
+                {"title": "GPU Memory 101", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "content": "c"}
+            ],
+        )
+        canned = iter(
+            [
+                '{"activities": [{"activityIndex": 0, "terms": []}], '
+                '"videoSearchQuery": "GPU memory coalescing explained", "videoPosition": 1}',
+                '{"selectedIndex": 0, "caption": "A clear explanation of memory coalescing."}',
+                '{"type": "reading", "title": "Intro", "estimatedMinutes": 10, "body": "b"}',
+                '{"digest": "Covered the basics."}',
+            ]
+        )
+        monkeypatch.setattr("app.services.llm.litellm.completion", lambda **kwargs: _FakeResponse(next(canned)))
+
+        result = generate_module_activities(module.id)
+
+        assert len(result.activities) == 2
+        assert result.activities[1].activity_type == "video"
+        assert result.activities[1].to_dict()["videoId"] == "dQw4w9WgXcQ"
 
 
 def test_document_grounded_module_seed_prompt_includes_source_material_text(real_llm_app, monkeypatch) -> None:

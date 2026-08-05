@@ -58,6 +58,8 @@ def update_settings() -> Response:
         settings.deep_search_enabled = body["deepSearchEnabled"]
     if "visualAidsEnabled" in body:
         settings.visual_aids_enabled = body["visualAidsEnabled"]
+    if "videoEmbeddingEnabled" in body:
+        settings.video_embedding_enabled = body["videoEmbeddingEnabled"]
     if "weeklyGoalActivities" in body:
         goal = body["weeklyGoalActivities"]
         if goal is not None and (not isinstance(goal, int) or isinstance(goal, bool) or goal < 1):

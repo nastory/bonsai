@@ -31,7 +31,9 @@ class _FakeResponse:
 
 
 def _search_plan_response() -> _FakeResponse:
-    return _FakeResponse('{"activities": [{"activityIndex": 0, "terms": []}]}')
+    return _FakeResponse(
+        '{"activities": [{"activityIndex": 0, "terms": []}], "videoSearchQuery": "", "videoPosition": 0}'
+    )
 
 
 def _make_module(activity_plan=None) -> Module:

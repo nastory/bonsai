@@ -14,6 +14,8 @@ def test_get_settings_creates_defaults_on_first_call(client, db) -> None:
     assert body["embeddingUseCompletionCredentials"] is True
     assert body["imageGenerationUseCompletionCredentials"] is True
     assert body["deepSearchEnabled"] is False
+    assert body["visualAidsEnabled"] is False
+    assert body["videoEmbeddingEnabled"] is False
     assert body["weeklyGoalActivities"] is None
 
 

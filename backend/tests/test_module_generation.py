@@ -156,7 +156,7 @@ def test_second_module_generation_includes_first_modules_digest_in_its_prompts(r
 
         first_module_responses = iter(
             [
-                _FakeResponse('{"activities": [{"activityIndex": 0, "terms": []}]}'),
+                _FakeResponse('{"activities": [{"activityIndex": 0, "terms": []}], "videoSearchQuery": "", "videoPosition": 0}'),
                 _FakeResponse('{"type": "reading", "title": "Intro", "estimatedMinutes": 10, "body": "b"}'),
                 _FakeResponse('{"digest": "Covered SIMT execution and warp divergence."}'),
             ]
@@ -169,7 +169,7 @@ def test_second_module_generation_includes_first_modules_digest_in_its_prompts(r
         def fake_completion(**kwargs):
             captured_calls.append(kwargs["messages"])
             canned = [
-                '{"activities": [{"activityIndex": 0, "terms": []}]}',
+                '{"activities": [{"activityIndex": 0, "terms": []}], "videoSearchQuery": "", "videoPosition": 0}',
                 '{"type": "reading", "title": "Memory Overview", "estimatedMinutes": 10, "body": "b"}',
                 '{"digest": "Covered memory hierarchy."}',
             ]

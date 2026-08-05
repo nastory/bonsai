@@ -306,6 +306,12 @@ class UserSettings(db.Model):
     # module_generation.py. Needs a Tavily key to do anything; this toggle
     # doesn't enforce that, same precedent as deep_search_enabled.
     visual_aids_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    # Opt-in, credit-costly (extra Tavily video search, plus one small LLM
+    # selection call): once per module, tries to find one relevant YouTube
+    # video and embed it as its own activity - see module_generation.py.
+    # Needs a Tavily key to do anything; same precedent as
+    # deep_search_enabled/visual_aids_enabled.
+    video_embedding_enabled = db.Column(db.Boolean, nullable=False, default=False)
     # Independently configurable from the completion model, same pattern as
     # embedding_model above. Powers course thumbnail generation
     # (see image_generation.py) via resolve_image_generation_config():
@@ -365,5 +371,6 @@ class UserSettings(db.Model):
             "hasTavilyApiKey": bool(self.tavily_api_key),
             "deepSearchEnabled": self.deep_search_enabled,
             "visualAidsEnabled": self.visual_aids_enabled,
+            "videoEmbeddingEnabled": self.video_embedding_enabled,
             "weeklyGoalActivities": self.weekly_goal_activities,
         }
