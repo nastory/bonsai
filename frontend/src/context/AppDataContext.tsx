@@ -14,6 +14,8 @@ const DEFAULT_USER: UserSettings = {
   feedbackTone: 'encouraging',
   thumbnailGenerationEnabled: true,
   modelProvider: { tier: 'hosted', hasApiKey: false },
+  embeddingUseCompletionCredentials: true,
+  hasEmbeddingApiKey: false,
   hasTavilyApiKey: false,
   deepSearchEnabled: false,
 };

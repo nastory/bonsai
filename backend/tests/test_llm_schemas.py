@@ -234,6 +234,20 @@ def test_validate_llm_json_activity_citations_default_to_none() -> None:
     assert result.citations is None
 
 
+def test_validate_llm_json_accepts_a_document_citation_with_no_url() -> None:
+    raw = """
+    {
+        "type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading.",
+        "citations": [{"label": "paper.pdf, p. 4"}]
+    }
+    """
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert result.citations[0].label == "paper.pdf, p. 4"
+    assert result.citations[0].url is None
+
+
 def test_validate_llm_json_accepts_well_formed_quiz_with_answer_and_explanation() -> None:
     raw = """
     {

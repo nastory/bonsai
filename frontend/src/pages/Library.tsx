@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
 import { Input } from '../components/ui/Input';
+import { InlineMarkdown } from '../components/ui/Markdown';
 import { activityPath } from '../lib/courseHelpers';
 
 export function Library() {
@@ -49,9 +50,11 @@ export function Library() {
             to={activityPath(course.id, module.id, activity.id)}
             className="block rounded-lg border border-bonsai-border bg-white px-4 py-3 hover:bg-bonsai-cream"
           >
-            <p className="text-sm font-medium text-bonsai-text">{activity.title}</p>
+            <p className="text-sm font-medium text-bonsai-text">
+              <InlineMarkdown>{activity.title}</InlineMarkdown>
+            </p>
             <p className="text-xs text-bonsai-text-muted">
-              {course.title} • {module.title}
+              <InlineMarkdown>{course.title}</InlineMarkdown> • <InlineMarkdown>{module.title}</InlineMarkdown>
             </p>
           </Link>
         ))}

@@ -9,6 +9,7 @@ import { ModuleCompletionModal } from '../components/lesson/ModuleCompletionModa
 import { SourceMaterialsPanel } from '../components/lesson/SourceMaterialsPanel';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+import { InlineMarkdown } from '../components/ui/Markdown';
 
 export function Lesson() {
   const { courseId, moduleId, activityId } = useParams();
@@ -47,7 +48,11 @@ export function Lesson() {
     if (nextModule && nextModule.activities.length > 0) {
       navigate(activityPath(course.id, nextModule.id, nextModule.activities[0].id));
     } else {
-      navigate('/courses');
+      // The next module (if any) hasn't been generated yet - generation is
+      // lazy, triggered by CourseHome when it notices an in-progress module
+      // with no activities. Send the learner there instead of the course
+      // list so they land somewhere that actually shows what's happening.
+      navigate(`/courses/${course.id}`, { state: { justFinishedModule: !!nextModule } });
     }
   };
 
@@ -95,8 +100,12 @@ export function Lesson() {
         </div>
       </div>
 
-      <Badge>{module.title}</Badge>
-      <h1 className="mt-1 text-2xl font-semibold text-bonsai-text">{activity.title}</h1>
+      <Badge>
+        <InlineMarkdown>{module.title}</InlineMarkdown>
+      </Badge>
+      <h1 className="mt-1 text-2xl font-semibold text-bonsai-text">
+        <InlineMarkdown>{activity.title}</InlineMarkdown>
+      </h1>
 
       <div className="mt-5">
         <ActivityCard activity={activity} />

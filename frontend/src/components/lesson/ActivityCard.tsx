@@ -6,31 +6,13 @@ import { getFeedbackMessage } from '../../lib/feedback';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { Markdown, InlineMarkdown } from '../ui/Markdown';
 import { ChatBubble } from '../chat/ChatBubble';
 
 function ReadingBody({ body }: { body: string }) {
-  const lines = body.split('\n').filter(Boolean);
   return (
-    <div className="space-y-2 text-sm leading-relaxed text-bonsai-text">
-      {lines.map((line, i) => {
-        const numbered = line.match(/^(\d+)\.\s+(.*)$/);
-        if (numbered) {
-          const [, index, rest] = numbered;
-          const [label, ...detail] = rest.split(': ');
-          return (
-            <div key={i} className="flex items-start gap-3 rounded-lg bg-bonsai-cream px-3 py-2">
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-bonsai-green">
-                {index}
-              </span>
-              <p>
-                <span className="font-medium">{label}</span>
-                {detail.length > 0 && <span className="text-bonsai-text-muted">: {detail.join(': ')}</span>}
-              </p>
-            </div>
-          );
-        }
-        return <p key={i}>{line}</p>;
-      })}
+    <div className="space-y-3 text-base leading-relaxed text-bonsai-text">
+      <Markdown>{body}</Markdown>
     </div>
   );
 }
@@ -38,11 +20,20 @@ function ReadingBody({ body }: { body: string }) {
 function Citations({ citations }: { citations: NonNullable<Activity['citations']> }) {
   return (
     <ul className="mt-4 space-y-1 border-t border-bonsai-border pt-3 text-xs text-bonsai-text-muted">
-      {citations.map((citation) => (
-        <li key={citation.url}>
-          <a href={citation.url} target="_blank" rel="noreferrer" className="hover:text-bonsai-green hover:underline">
-            {citation.label}
-          </a>
+      {citations.map((citation, i) => (
+        <li key={`${citation.label}-${i}`}>
+          {citation.url ? (
+            <a
+              href={citation.url}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-bonsai-green hover:underline"
+            >
+              {citation.label}
+            </a>
+          ) : (
+            citation.label
+          )}
         </li>
       ))}
     </ul>
@@ -56,7 +47,9 @@ function CheckUnderstanding({ prompt, tone }: { prompt: string; tone: 'encouragi
   return (
     <div className="mt-5 rounded-lg border border-bonsai-green/30 bg-emerald-50 p-4">
       <p className="text-sm font-medium text-bonsai-green">Check your understanding</p>
-      <p className="mt-1 text-sm text-bonsai-text">{prompt}</p>
+      <p className="mt-1 text-sm text-bonsai-text">
+        <InlineMarkdown>{prompt}</InlineMarkdown>
+      </p>
       <div className="mt-3 flex gap-2">
         <Input
           value={answer}
@@ -84,7 +77,9 @@ function QuizBlock({ activity }: { activity: Activity }) {
 
   return (
     <div>
-      <p className="text-sm font-medium text-bonsai-text">{activity.question}</p>
+      <p className="text-sm font-medium text-bonsai-text">
+        <InlineMarkdown>{activity.question ?? ''}</InlineMarkdown>
+      </p>
       <div className="mt-3 space-y-2">
         {activity.options?.map((option, index) => {
           const isCorrectOption = index === activity.correctAnswerIndex;
@@ -102,7 +97,7 @@ function QuizBlock({ activity }: { activity: Activity }) {
                     : 'border-bonsai-border bg-white text-bonsai-text hover:bg-bonsai-cream'
               }`}
             >
-              {option}
+              <InlineMarkdown>{option}</InlineMarkdown>
             </button>
           );
         })}
@@ -113,7 +108,9 @@ function QuizBlock({ activity }: { activity: Activity }) {
             {isCorrect ? 'Correct!' : 'Not quite — try again.'}
           </p>
           {isCorrect && activity.explanation && (
-            <p className="mt-1 text-sm text-bonsai-text-muted">{activity.explanation}</p>
+            <p className="mt-1 text-sm text-bonsai-text-muted">
+              <InlineMarkdown>{activity.explanation}</InlineMarkdown>
+            </p>
           )}
         </div>
       )}
@@ -135,7 +132,9 @@ function OpenResponseBlock({
 
   return (
     <div>
-      <p className="text-sm text-bonsai-text">{activity.prompt}</p>
+      <p className="text-sm text-bonsai-text">
+        <InlineMarkdown>{activity.prompt ?? ''}</InlineMarkdown>
+      </p>
       <textarea
         value={response}
         onChange={(e) => setResponse(e.target.value)}
@@ -158,7 +157,7 @@ function DiscussionBlock({ activity, tone }: { activity: Activity; tone: 'encour
 
   return (
     <div className="space-y-3">
-      <ChatBubble from="bonsai">{activity.prompt}</ChatBubble>
+      <ChatBubble from="bonsai">{activity.prompt ?? ''}</ChatBubble>
       {sent && <ChatBubble from="user">{reply}</ChatBubble>}
       {sent && <ChatBubble from="bonsai">{getFeedbackMessage(tone, 'discussion')}</ChatBubble>}
       {!sent && (

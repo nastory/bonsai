@@ -147,10 +147,19 @@ class ModuleSearchPlanSchema(BaseModel):
 
 
 class CitationSchema(BaseModel):
-    """A citation linking generated content back to a real web source."""
+    """A citation linking generated content back to its source.
+
+    `url` is None for a document source material citation (e.g.
+    "syllabus.pdf, p. 4", attached deterministically by module_generation.py
+    from the actual chunk retrieved, not model-authored - see
+    _generate_activities_content()'s vector-index branch) - only a web
+    citation has a real URL. `label` carries the full citation text either
+    way, so no separate "page" field is needed on this schema.
+    """
 
     label: str
-    url: str
+    url: str | None = None
+
 
 class GeneratedActivitySchema(BaseModel):
     """Expected shape of one module_activity_generation.md response.

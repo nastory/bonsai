@@ -1,17 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation, useNavigate, Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Check, Circle } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
 import { findCurrentActivity, activityPath } from '../lib/courseHelpers';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
+import { InlineMarkdown } from '../components/ui/Markdown';
+import { NoticeDialog } from '../components/layout/NoticeDialog';
 import { cn } from '../components/ui/cn';
 
 export function CourseHome() {
   const { courseId } = useParams();
   const { getCourse, generateModuleActivities } = useAppData();
   const course = courseId ? getCourse(courseId) : undefined;
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const [showNextModuleNotice, setShowNextModuleNotice] = useState(
+    Boolean((location.state as { justFinishedModule?: boolean } | null)?.justFinishedModule),
+  );
+
+  // Clear the navigation state right away so refreshing (or navigating back
+  // to this page later) doesn't re-show the notice.
+  useEffect(() => {
+    if (location.state) navigate(location.pathname, { replace: true, state: null });
+    // Deliberately empty deps: this should run once, on arrival, only.
+  }, []);
 
   const [expandedModules, setExpandedModules] = useState<Set<string>>(() => {
     if (!course) return new Set<string>();
@@ -73,8 +88,12 @@ export function CourseHome() {
       <div className="flex items-center gap-4">
         <div className={`h-16 w-16 shrink-0 rounded-lg bg-gradient-to-br ${course.thumbnailUrl}`} />
         <div>
-          <h1 className="text-2xl font-semibold text-bonsai-text">{course.title}</h1>
-          <p className="mt-1 text-sm text-bonsai-text-muted">{course.description}</p>
+          <h1 className="text-2xl font-semibold text-bonsai-text">
+            <InlineMarkdown>{course.title}</InlineMarkdown>
+          </h1>
+          <p className="mt-1 text-sm text-bonsai-text-muted">
+            <InlineMarkdown>{course.description}</InlineMarkdown>
+          </p>
         </div>
       </div>
 
@@ -89,7 +108,8 @@ export function CourseHome() {
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-bonsai-text-muted">Currently on</p>
               <p className="text-sm font-medium text-bonsai-text">
-                {current.module.title} · {current.activity.title}
+                <InlineMarkdown>{current.module.title}</InlineMarkdown> ·{' '}
+                <InlineMarkdown>{current.activity.title}</InlineMarkdown>
               </p>
             </div>
             <Link to={activityPath(course.id, current.module.id, current.activity.id)}>
@@ -113,7 +133,9 @@ export function CourseHome() {
                   onClick={() => toggleModule(module.id)}
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
-                  <p className="text-sm font-medium text-bonsai-text">{module.title}</p>
+                  <p className="text-sm font-medium text-bonsai-text">
+                    <InlineMarkdown>{module.title}</InlineMarkdown>
+                  </p>
                   {isExpanded ? (
                     <ChevronDown className="h-4 w-4 shrink-0 text-bonsai-text-muted" />
                   ) : (
@@ -129,7 +151,7 @@ export function CourseHome() {
                         module.status === 'locked' ? 'text-bonsai-text-muted' : 'text-bonsai-text',
                       )}
                     >
-                      {module.title}
+                      <InlineMarkdown>{module.title}</InlineMarkdown>
                     </p>
                     <p className="mt-0.5 text-xs text-bonsai-text-muted">
                       {module.status === 'locked'
@@ -163,7 +185,9 @@ export function CourseHome() {
                         ) : (
                           <Circle className="h-3.5 w-3.5 shrink-0" />
                         )}
-                        <span>{activity.title}</span>
+                        <span>
+                          <InlineMarkdown>{activity.title}</InlineMarkdown>
+                        </span>
                       </Link>
                     </li>
                   ))}
@@ -173,6 +197,14 @@ export function CourseHome() {
           );
         })}
       </div>
+
+      {showNextModuleNotice && (
+        <NoticeDialog
+          title="Nice work!"
+          message="Alright, I'll start generating your next module."
+          onClose={() => setShowNextModuleNotice(false)}
+        />
+      )}
     </div>
   );
 }

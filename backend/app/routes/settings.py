@@ -42,6 +42,10 @@ def update_settings() -> Response:
         settings.thumbnail_generation_enabled = body["thumbnailGenerationEnabled"]
     if "embeddingModel" in body:
         settings.embedding_model = body["embeddingModel"]
+    if "embeddingUseCompletionCredentials" in body:
+        settings.embedding_use_completion_credentials = body["embeddingUseCompletionCredentials"]
+    if "embeddingApiKey" in body:
+        settings.embedding_api_key = body["embeddingApiKey"]
     if "tavilyApiKey" in body:
         settings.tavily_api_key = body["tavilyApiKey"]
     if "deepSearchEnabled" in body:

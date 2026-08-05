@@ -5,6 +5,7 @@ import { findCurrentActivity, activityPath } from '../lib/courseHelpers';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
+import { InlineMarkdown } from '../components/ui/Markdown';
 
 function timeOfDayGreeting(): string {
   const hour = new Date().getHours();
@@ -34,9 +35,12 @@ export function Today() {
               className={`h-20 w-20 shrink-0 rounded-lg bg-gradient-to-br ${inProgressCourse.thumbnailUrl}`}
             />
             <div className="flex-1">
-              <p className="font-semibold text-bonsai-text">{inProgressCourse.title}</p>
+              <p className="font-semibold text-bonsai-text">
+                <InlineMarkdown>{inProgressCourse.title}</InlineMarkdown>
+              </p>
               <p className="mt-0.5 text-sm text-bonsai-text-muted">
-                {current.module.title} • {current.activity.title}
+                <InlineMarkdown>{current.module.title}</InlineMarkdown> •{' '}
+                <InlineMarkdown>{current.activity.title}</InlineMarkdown>
               </p>
               <div className="mt-3 flex items-center gap-3">
                 <ProgressBar percent={inProgressCourse.progressPercent} className="flex-1" />
@@ -76,7 +80,9 @@ export function Today() {
               <FileText className="h-5 w-5 text-bonsai-text-muted" />
             )}
             <div>
-              <p className="text-sm font-medium text-bonsai-text">{current.activity.title}</p>
+              <p className="text-sm font-medium text-bonsai-text">
+                <InlineMarkdown>{current.activity.title}</InlineMarkdown>
+              </p>
               {current.activity.estimatedMinutes && (
                 <p className="text-xs text-bonsai-text-muted">
                   Lesson {current.indexInModule + 1} • {current.activity.estimatedMinutes} min

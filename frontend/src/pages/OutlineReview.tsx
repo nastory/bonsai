@@ -5,6 +5,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
+import { InlineMarkdown } from '../components/ui/Markdown';
 import { useAppData } from '../context/AppDataContext';
 import { fetchCourse, submitOutlineFeedback, approveOutline } from '../lib/api';
 import type { Course } from '../types/course';
@@ -72,18 +73,28 @@ export function OutlineReview() {
       <p className="mt-1 text-sm text-bonsai-text-muted">Review it, ask for changes, or start learning.</p>
 
       <Card className="mt-6">
-        <p className="text-lg font-semibold text-bonsai-text">{course.title}</p>
-        <p className="mt-2 text-sm text-bonsai-text-muted">{course.description}</p>
+        <p className="text-lg font-semibold text-bonsai-text">
+          <InlineMarkdown>{course.title}</InlineMarkdown>
+        </p>
+        <p className="mt-2 text-sm text-bonsai-text-muted">
+          <InlineMarkdown>{course.description}</InlineMarkdown>
+        </p>
 
         <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
           <div>
             <dt className="text-bonsai-text-muted">Estimated timeline</dt>
-            <dd className="font-medium text-bonsai-text">{course.estimatedTimeline}</dd>
+            <dd className="font-medium text-bonsai-text">
+              <InlineMarkdown>{course.estimatedTimeline}</InlineMarkdown>
+            </dd>
           </div>
           <div>
             <dt className="text-bonsai-text-muted">Prerequisites</dt>
             <dd className="font-medium text-bonsai-text">
-              {course.prerequisites.length > 0 ? course.prerequisites.join(', ') : 'None'}
+              {course.prerequisites.length > 0 ? (
+                <InlineMarkdown>{course.prerequisites.join(', ')}</InlineMarkdown>
+              ) : (
+                'None'
+              )}
             </dd>
           </div>
         </dl>
@@ -92,8 +103,12 @@ export function OutlineReview() {
           {course.modules.map((module, i) => (
             <div key={module.id} className="rounded-lg border border-bonsai-border p-3">
               <Badge>Module {i + 1}</Badge>
-              <p className="mt-1 font-medium text-bonsai-text">{module.title}</p>
-              <p className="mt-0.5 text-sm text-bonsai-text-muted">{module.description}</p>
+              <p className="mt-1 font-medium text-bonsai-text">
+                <InlineMarkdown>{module.title}</InlineMarkdown>
+              </p>
+              <p className="mt-0.5 text-sm text-bonsai-text-muted">
+                <InlineMarkdown>{module.description}</InlineMarkdown>
+              </p>
             </div>
           ))}
         </div>

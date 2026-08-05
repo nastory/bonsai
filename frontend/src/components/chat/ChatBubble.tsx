@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react';
+import { InlineMarkdown } from '../ui/Markdown';
 import logo from '../../assets/logo.svg';
 
 interface ChatBubbleProps {
   from: 'bonsai' | 'user';
-  children: ReactNode;
+  children: string;
 }
 
 export function ChatBubble({ from, children }: ChatBubbleProps) {
@@ -11,7 +11,7 @@ export function ChatBubble({ from, children }: ChatBubbleProps) {
     return (
       <div className="flex justify-end">
         <div className="max-w-md rounded-2xl rounded-tr-sm bg-bonsai-green px-4 py-3 text-sm text-white">
-          {children}
+          <InlineMarkdown>{children}</InlineMarkdown>
         </div>
       </div>
     );
@@ -23,7 +23,7 @@ export function ChatBubble({ from, children }: ChatBubbleProps) {
         <img src={logo} alt="Bonsai" className="h-4 w-4" />
       </span>
       <div className="max-w-md rounded-2xl rounded-tl-sm bg-bonsai-cream px-4 py-3 text-sm text-bonsai-text">
-        {children}
+        <InlineMarkdown>{children}</InlineMarkdown>
       </div>
     </div>
   );

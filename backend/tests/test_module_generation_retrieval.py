@@ -29,6 +29,19 @@ class _FakeResponse:
         self.choices = [_FakeChoice(content)]
 
 
+class _FakeEmbeddingItem(dict):
+    """A dict subclass so item["embedding"] works, matching litellm's real response shape."""
+
+
+class _FakeEmbeddingResponse:
+    def __init__(self, num_vectors: int) -> None:
+        self.data = [_FakeEmbeddingItem(embedding=[0.1, 0.2, 0.3]) for _ in range(num_vectors)]
+
+
+def _fake_embedding(**kwargs):
+    return _FakeEmbeddingResponse(len(kwargs["input"]))
+
+
 def _make_module() -> Module:
     course = Course(
         id="c1",
@@ -76,6 +89,7 @@ def test_generate_module_activities_passes_retrieved_results_to_activity_generat
     with real_llm_app.app_context():
         settings = UserSettings.get_or_create()
         settings.tavily_api_key = "tvly-configured"
+        settings.embedding_model = "test-embedding"
         _db.session.commit()
         module = _make_module()
 
@@ -85,12 +99,41 @@ def test_generate_module_activities_passes_retrieved_results_to_activity_generat
                 {"title": "A GPU Primer", "url": "https://example.com/gpu-primer", "content": "GPUs are..."}
             ],
         )
+        monkeypatch.setattr("app.services.embedding.litellm.embedding", _fake_embedding)
         captured_prompts: list = []
         monkeypatch.setattr("app.services.llm.litellm.completion", _mock_completion(captured_prompts))
 
         generate_module_activities(module.id)
 
+        # Fetched content is now chunked (via the source title) rather than
+        # dumped raw, so the retrievable text is the title, not the raw URL.
         assert "A GPU Primer" in captured_prompts[1]
+
+
+def test_generate_module_activities_attaches_a_real_url_citation_for_web_results(
+    real_llm_app, monkeypatch
+) -> None:
+    with real_llm_app.app_context():
+        settings = UserSettings.get_or_create()
+        settings.tavily_api_key = "tvly-configured"
+        settings.embedding_model = "test-embedding"
+        _db.session.commit()
+        module = _make_module()
+
+        monkeypatch.setattr(
+            "app.services.module_retrieval.web_search",
+            lambda query, api_key, search_depth="basic": [
+                {"title": "A GPU Primer", "url": "https://example.com/gpu-primer", "content": "GPUs are..."}
+            ],
+        )
+        monkeypatch.setattr("app.services.embedding.litellm.embedding", _fake_embedding)
+        captured_prompts: list = []
+        monkeypatch.setattr("app.services.llm.litellm.completion", _mock_completion(captured_prompts))
+
+        module_result = generate_module_activities(module.id)
+
+        citations = module_result.activities[0].to_dict()["citations"]
+        assert citations == [{"label": "A GPU Primer", "url": "https://example.com/gpu-primer"}]
 
 
 def test_generate_module_activities_skips_retrieval_without_tavily_key(real_llm_app, monkeypatch) -> None:
@@ -106,7 +149,7 @@ def test_generate_module_activities_skips_retrieval_without_tavily_key(real_llm_
 
         generate_module_activities(module.id)
 
-        assert "No search results are available for this activity" in captured_prompts[1]
+        assert "No material is available for this activity" in captured_prompts[1]
 
 
 def test_generate_module_activities_uses_advanced_search_depth_when_deep_search_enabled(

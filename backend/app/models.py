@@ -42,6 +42,11 @@ class Course(db.Model):
     # replay the full interview conversation. None for courses created
     # before this existed or that skip the interview flow entirely.
     context_summary = db.Column(db.JSON, nullable=True)
+    # Path (relative to instance_path) to this course's FAISS vector index
+    # of its source materials' chunks - see vector_store.py. None until the
+    # first document is ingested; a course with no source materials never
+    # gets one.
+    vector_index_path = db.Column(db.String, nullable=True)
 
     modules = db.relationship(
         "Module",
@@ -263,9 +268,14 @@ class UserSettings(db.Model):
     model_provider_byom_endpoint = db.Column(db.String, nullable=True)
     model_provider_byom_model = db.Column(db.String, nullable=True)
     # Independently configurable from the completion model above, per the
-    # PRD's model-roles requirement. Not tied to a tier/provider of its own
-    # yet since nothing (retrieval, semantic search) actually uses it yet.
+    # PRD's model-roles requirement. Powers document-grounded retrieval
+    # (see vector_store.py) via resolve_embedding_config(): BYOM reuses the
+    # completion model's endpoint (model_provider_byom_endpoint) with this
+    # as the model name; hosted reuses the completion model's credentials
+    # unless embedding_use_completion_credentials is off.
     embedding_model = db.Column(db.String, nullable=True)
+    embedding_use_completion_credentials = db.Column(db.Boolean, nullable=False, default=True)
+    embedding_api_key = db.Column(db.String, nullable=True)
     # Separate from the LLM provider entirely, per the PRD: retrieval needs
     # its own Tavily key regardless of hosted vs. BYOM.
     tavily_api_key = db.Column(db.String, nullable=True)
@@ -307,6 +317,8 @@ class UserSettings(db.Model):
                 "hasApiKey": bool(self.model_provider_api_key),
             },
             "embeddingModel": self.embedding_model,
+            "embeddingUseCompletionCredentials": self.embedding_use_completion_credentials,
+            "hasEmbeddingApiKey": bool(self.embedding_api_key),
             "hasTavilyApiKey": bool(self.tavily_api_key),
             "deepSearchEnabled": self.deep_search_enabled,
         }

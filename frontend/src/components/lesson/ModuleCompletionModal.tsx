@@ -1,5 +1,6 @@
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { InlineMarkdown } from '../ui/Markdown';
 import logo from '../../assets/logo.svg';
 
 interface ModuleCompletionModalProps {
@@ -23,7 +24,9 @@ export function ModuleCompletionModal({
             <img src={logo} alt="Bonsai" className="h-4 w-4" />
           </span>
           <div>
-            <p className="font-semibold text-bonsai-text">Nice work finishing {moduleTitle}!</p>
+            <p className="font-semibold text-bonsai-text">
+              Nice work finishing <InlineMarkdown>{moduleTitle}</InlineMarkdown>!
+            </p>
             <p className="text-sm text-bonsai-text-muted">How's it going so far?</p>
           </div>
         </div>

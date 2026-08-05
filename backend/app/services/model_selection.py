@@ -4,6 +4,8 @@ A separate module from course_generation.py since module-content generation
 will need the exact same resolution logic.
 """
 
+from flask import current_app
+
 from app.models import UserSettings
 
 DEFAULT_HOSTED_MODELS = {
@@ -12,6 +14,19 @@ DEFAULT_HOSTED_MODELS = {
 }
 DEFAULT_BYOM_MODEL = "llama3"
 DEFAULT_BYOM_ENDPOINT = "http://localhost:11434"
+MOCK_EMBEDDING_MODEL = "mock-embedding-model"
+
+
+class EmbeddingNotConfiguredError(Exception):
+    """Raised when document-grounded generation needs an embedding model but none is set.
+
+    Unlike the completion model (which has a sensible universal default per
+    tier - see DEFAULT_HOSTED_MODELS/DEFAULT_BYOM_MODEL), there's no safe
+    default embedding model to guess: a hosted-tier default wouldn't be a
+    valid model name for BYOM/Ollama and vice versa. Failing clearly here,
+    with an actionable message, is more honest than silently picking a
+    default that's likely wrong for the learner's configured tier.
+    """
 
 
 def resolve_model_config() -> dict:
@@ -47,4 +62,57 @@ def resolve_model_config() -> dict:
     config: dict = {"model": model_name}
     if settings.model_provider_api_key:
         config["api_key"] = settings.model_provider_api_key
+    return config
+
+
+def resolve_embedding_config() -> dict:
+    """Build the model/api_key/api_base kwargs embedding.embed() needs.
+
+    Mirrors resolve_model_config()'s tier branch, but for the embedding
+    model role instead of completion. Deliberately "ollama/", not
+    "ollama_chat/": confirmed against the installed litellm version's
+    source (litellm/main.py's embedding()) that it only has a plain
+    "ollama" provider branch - "ollama_chat" doesn't exist for embeddings,
+    it's specifically the chat-completions routing fix from
+    resolve_model_config(). Using it here would silently fail to match any
+    provider branch.
+
+    BYOM reuses the completion model's endpoint (one local Ollama instance
+    serving both chat and embedding models is the common case, and there's
+    no separate embedding endpoint setting). Hosted reuses the completion
+    model's API key unless the learner has opted into a separate one via
+    UserSettings.embedding_use_completion_credentials.
+
+    Returns:
+        A dict with a "model" key, plus "api_key" (hosted) or "api_base"
+        (BYOM) when relevant, same convention as resolve_model_config().
+
+    Raises:
+        EmbeddingNotConfiguredError: If no embedding model is set. Not
+            raised in LLM_TEST_MODE - embedding.embed()'s mock branch never
+            looks at the model name, so requiring real configuration in
+            tests would just be friction, not a meaningful check.
+    """
+    settings = UserSettings.get_or_create()
+    if current_app.config.get("LLM_TEST_MODE"):
+        return {"model": settings.embedding_model or MOCK_EMBEDDING_MODEL}
+
+    if not settings.embedding_model:
+        raise EmbeddingNotConfiguredError(
+            "No embedding model is configured. Set one in Settings to use document-grounded courses."
+        )
+    model_name = settings.embedding_model
+
+    if settings.model_provider_tier == "byom":
+        endpoint = settings.model_provider_byom_endpoint or DEFAULT_BYOM_ENDPOINT
+        return {"model": f"ollama/{model_name}", "api_base": endpoint}
+
+    config: dict = {"model": model_name}
+    api_key = (
+        settings.model_provider_api_key
+        if settings.embedding_use_completion_credentials
+        else settings.embedding_api_key
+    )
+    if api_key:
+        config["api_key"] = api_key
     return config

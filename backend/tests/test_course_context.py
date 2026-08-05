@@ -14,6 +14,7 @@ from app.services.course_context import (
     render_source_materials,
     summarize_document_for_interview,
 )
+from app.services.document_chunking import Chunk
 from app.services.source_material_storage import save_source_material_text
 
 
@@ -32,7 +33,20 @@ class _FakeResponse:
         self.choices = [_FakeChoice(content)]
 
 
-def test_summarize_document_for_interview_sends_the_document_text_and_parses_the_summary(
+class _FakeEmbeddingItem(dict):
+    """A dict subclass so item["embedding"] works, matching litellm's real response shape."""
+
+
+class _FakeEmbeddingResponse:
+    def __init__(self, num_vectors: int) -> None:
+        self.data = [_FakeEmbeddingItem(embedding=[0.1, 0.2, 0.3]) for _ in range(num_vectors)]
+
+
+def _fake_embedding(**kwargs):
+    return _FakeEmbeddingResponse(len(kwargs["input"]))
+
+
+def test_summarize_document_for_interview_sends_the_document_excerpt_and_parses_the_summary(
     real_llm_app, monkeypatch
 ) -> None:
     with real_llm_app.app_context():
@@ -43,14 +57,16 @@ def test_summarize_document_for_interview_sends_the_document_text_and_parses_the
             return _FakeResponse('{"summary": "A concise summary."}')
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+        monkeypatch.setattr("app.services.embedding.litellm.embedding", _fake_embedding)
 
-        summary = summarize_document_for_interview("GPU memory coalescing is a key optimization.", {"model": "test"})
+        chunks = [Chunk(text="GPU memory coalescing is a key optimization.", source="paper.pdf", page=1)]
+        summary = summarize_document_for_interview(chunks, {"model": "test"}, {"model": "test-embedding"})
 
         assert summary == "A concise summary."
         assert captured["messages"][0]["role"] == "system"
         assert captured["messages"][1] == {
             "role": "user",
-            "content": "GPU memory coalescing is a key optimization.",
+            "content": "Representative excerpts from the document:\n\nGPU memory coalescing is a key optimization.",
         }
 
 
@@ -232,7 +248,9 @@ def test_render_source_material_summaries_skips_materials_without_a_summary_yet(
 
 
 def test_summarize_document_for_interview_returns_mock_in_test_mode(db) -> None:
-    summary = summarize_document_for_interview("Some document text.", {"model": "test"})
+    chunks = [Chunk(text="Some document text.", source="notes.txt", page=None)]
+
+    summary = summarize_document_for_interview(chunks, {"model": "test"}, {"model": "test-embedding"})
 
     assert summary == "[MOCK] Summary of the document."
 

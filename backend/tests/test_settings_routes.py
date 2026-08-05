@@ -102,6 +102,27 @@ def test_put_settings_partial_update_preserves_embedding_model(client, db) -> No
     assert response.get_json()["embeddingModel"] == "text-embedding-3-small"
 
 
+def test_get_settings_defaults_embedding_use_completion_credentials_to_true(client, db) -> None:
+    response = client.get("/api/settings")
+
+    assert response.get_json()["embeddingUseCompletionCredentials"] is True
+
+
+def test_put_settings_stores_embedding_use_completion_credentials(client, db) -> None:
+    response = client.put("/api/settings", json={"embeddingUseCompletionCredentials": False})
+
+    assert response.get_json()["embeddingUseCompletionCredentials"] is False
+
+
+def test_put_settings_stores_embedding_api_key_but_never_returns_it(client, db) -> None:
+    response = client.put("/api/settings", json={"embeddingApiKey": "sk-embedding-secret"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["hasEmbeddingApiKey"] is True
+    assert "embeddingApiKey" not in body
+
+
 def test_put_settings_stores_tavily_key_but_never_returns_it(client, db) -> None:
     response = client.put("/api/settings", json={"tavilyApiKey": "tvly-super-secret"})
 

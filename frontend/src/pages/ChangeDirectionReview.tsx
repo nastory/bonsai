@@ -4,6 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
+import { InlineMarkdown } from '../components/ui/Markdown';
 import { useAppData } from '../context/AppDataContext';
 import { submitDirectionChangeFeedback, approveDirectionChange } from '../lib/api';
 import type { DirectionChangeProposal } from '../types/course';
@@ -80,8 +81,12 @@ export function ChangeDirectionReview() {
           {proposal.modules.map((module, i) => (
             <div key={i} className="rounded-lg border border-bonsai-border p-3">
               <Badge>Module {i + 1}</Badge>
-              <p className="mt-1 font-medium text-bonsai-text">{module.title}</p>
-              <p className="mt-0.5 text-sm text-bonsai-text-muted">{module.description}</p>
+              <p className="mt-1 font-medium text-bonsai-text">
+                <InlineMarkdown>{module.title}</InlineMarkdown>
+              </p>
+              <p className="mt-0.5 text-sm text-bonsai-text-muted">
+                <InlineMarkdown>{module.description}</InlineMarkdown>
+              </p>
             </div>
           ))}
         </div>

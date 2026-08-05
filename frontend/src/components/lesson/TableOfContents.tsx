@@ -2,6 +2,7 @@ import { X, Check, Circle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Course } from '../../types/course';
 import { cn } from '../ui/cn';
+import { InlineMarkdown } from '../ui/Markdown';
 import { activityPath } from '../../lib/courseHelpers';
 
 interface TableOfContentsProps {
@@ -18,7 +19,9 @@ export function TableOfContents({ course, currentActivityId, onClose }: TableOfC
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <p className="font-semibold text-bonsai-text">{course.title}</p>
+          <p className="font-semibold text-bonsai-text">
+            <InlineMarkdown>{course.title}</InlineMarkdown>
+          </p>
           <button onClick={onClose} aria-label="Close">
             <X className="h-4 w-4 text-bonsai-text-muted" />
           </button>
@@ -33,7 +36,7 @@ export function TableOfContents({ course, currentActivityId, onClose }: TableOfC
                   module.status === 'locked' ? 'text-bonsai-text-muted' : 'text-bonsai-text',
                 )}
               >
-                {module.title}
+                <InlineMarkdown>{module.title}</InlineMarkdown>
               </p>
 
               {module.activities.length === 0 ? (
@@ -62,7 +65,9 @@ export function TableOfContents({ course, currentActivityId, onClose }: TableOfC
                           ) : (
                             <Circle className="h-3.5 w-3.5 shrink-0" />
                           )}
-                          <span>{activity.title}</span>
+                          <span>
+                            <InlineMarkdown>{activity.title}</InlineMarkdown>
+                          </span>
                         </Link>
                       </li>
                     );

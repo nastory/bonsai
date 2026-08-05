@@ -96,6 +96,60 @@ def test_interview_question_reflects_an_attached_source_material(db) -> None:
     assert "notes.txt" in (step.question or "")
 
 
+def test_attaching_a_document_builds_the_course_vector_index(db) -> None:
+    file = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes.txt")
+
+    step = start_course("I want to learn about this paper", files=[file])
+
+    assert step.course.vector_index_path is not None
+    assert step.course.vector_index_path.endswith(f"{step.course.id}.faiss")
+
+
+def test_start_course_with_multiple_files_persists_all_source_materials(db) -> None:
+    file1 = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes1.txt")
+    file2 = FileStorage(stream=BytesIO(b"Warp scheduling determines thread execution order."), filename="notes2.txt")
+
+    step = start_course("I want to learn about these papers", files=[file1, file2])
+
+    assert len(step.course.source_materials) == 2
+    assert {m.file_name for m in step.course.source_materials} == {"notes1.txt", "notes2.txt"}
+    assert all(m.interview_summary for m in step.course.source_materials)
+
+
+def test_multiple_documents_in_one_call_share_a_single_vector_index(db) -> None:
+    file1 = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes1.txt")
+    file2 = FileStorage(stream=BytesIO(b"Warp scheduling determines thread execution order."), filename="notes2.txt")
+
+    step = start_course("I want to learn about these papers", files=[file1, file2])
+
+    from app.services.model_selection import resolve_embedding_config
+    from app.services.vector_store import query
+
+    results = query(step.course, ["anything"], resolve_embedding_config(), top_k=10)
+    file_names = {chunk.source for chunk in results[0]}
+
+    assert file_names == {"notes1.txt", "notes2.txt"}
+
+
+def test_attaching_a_second_document_on_a_later_turn_appends_to_the_same_index(db) -> None:
+    file1 = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes1.txt")
+    step = start_course("I want to learn about this paper", files=[file1])
+    first_index_path = step.course.vector_index_path
+
+    file2 = FileStorage(stream=BytesIO(b"Warp scheduling determines thread execution order."), filename="notes2.txt")
+    step2 = submit_interview_answer(step.course.id, "here's another paper", files=[file2])
+
+    assert step2.course.vector_index_path == first_index_path
+    assert len(step2.course.source_materials) == 2
+
+    from app.services.model_selection import resolve_embedding_config
+    from app.services.vector_store import query
+
+    results = query(step2.course, ["anything"], resolve_embedding_config(), top_k=10)
+    file_names = {chunk.source for chunk in results[0]}
+    assert file_names == {"notes1.txt", "notes2.txt"}
+
+
 def test_interview_question_is_generic_without_a_source_material(db) -> None:
     step = start_course("I want to learn GPU programming")
 
@@ -132,10 +186,30 @@ class _FakeResponse:
         self.choices = [_FakeChoice(content)]
 
 
+class _FakeEmbeddingItem(dict):
+    """A dict subclass so item["embedding"] works, matching litellm's real response shape."""
+
+
+class _FakeEmbeddingResponse:
+    def __init__(self, num_vectors: int) -> None:
+        self.data = [_FakeEmbeddingItem(embedding=[0.1, 0.2, 0.3]) for _ in range(num_vectors)]
+
+
+def _fake_embedding(**kwargs):
+    return _FakeEmbeddingResponse(len(kwargs["input"]))
+
+
 def test_interview_prompt_uses_document_summary_not_raw_text(real_llm_app, monkeypatch) -> None:
     with real_llm_app.app_context():
-        # start_course() with a file makes two real calls in order: summarize
-        # the document (ingestion), then ask the first interview question.
+        from app.models import UserSettings
+
+        UserSettings.get_or_create().embedding_model = "test-embedding"
+        db.session.commit()
+
+        # start_course() with a file makes two real completion calls in
+        # order: summarize the document (ingestion), then ask the first
+        # interview question. Embedding calls (chunking/indexing, and
+        # ranking chunks for the summary) go through _fake_embedding instead.
         responses = [
             _FakeResponse('{"summary": "A short paper about GPU memory coalescing."}'),
             _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
@@ -149,6 +223,7 @@ def test_interview_prompt_uses_document_summary_not_raw_text(real_llm_app, monke
             return response
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+        monkeypatch.setattr("app.services.embedding.litellm.embedding", _fake_embedding)
         file = FileStorage(
             stream=BytesIO(b"GPU memory coalescing is a key optimization technique."), filename="notes.txt"
         )
@@ -274,13 +349,19 @@ def test_outline_prompt_includes_parent_context_when_branched(real_llm_app, monk
         assert "Covered GPU memory coalescing basics." in captured["prompt"]
 
 
-def test_outline_prompt_includes_source_material_text(real_llm_app, monkeypatch) -> None:
+def test_outline_prompt_includes_source_material_summary_not_raw_text(real_llm_app, monkeypatch) -> None:
     with real_llm_app.app_context():
+        from app.models import UserSettings
+
+        UserSettings.get_or_create().embedding_model = "test-embedding"
+        db.session.commit()
+
         responses = [
             _FakeResponse('{"summary": "A short paper about GPU memory coalescing."}'),
             _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
         ]
         monkeypatch.setattr("app.services.llm.litellm.completion", lambda **kwargs: responses.pop(0))
+        monkeypatch.setattr("app.services.embedding.litellm.embedding", _fake_embedding)
         file = FileStorage(
             stream=BytesIO(b"GPU memory coalescing is a key optimization technique."), filename="notes.txt"
         )
@@ -299,7 +380,8 @@ def test_outline_prompt_includes_source_material_text(real_llm_app, monkeypatch)
         generate_outline(step.course.id)
 
         assert "notes.txt" in captured["prompt"]
-        assert "GPU memory coalescing is a key optimization technique." in captured["prompt"]
+        assert "A short paper about GPU memory coalescing." in captured["prompt"]
+        assert "GPU memory coalescing is a key optimization technique." not in captured["prompt"]
 
 
 def test_outline_regeneration_includes_prior_outline_and_revision_request_as_turns(

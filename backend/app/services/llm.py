@@ -8,6 +8,16 @@ import litellm
 from flask import current_app
 from pydantic import BaseModel
 
+# Ollama's own default is ~2048 tokens - too small for this app's real
+# prompts (accumulated activity history within a module, retrieved document
+# chunks, course learning history) and already confirmed live to cause
+# truncated/malformed responses under real usage (see docs/todo.md and
+# module_generation.py's module docstring). 4x the default, picked with
+# real VRAM tradeoffs in mind (a bigger num_ctx costs Ollama proportionally
+# more memory) rather than maximized blindly - verified live against a real
+# Ollama instance, not just asserted from documentation.
+OLLAMA_NUM_CTX = 8192
+
 
 def complete(
     messages: list[dict[str, str]],
@@ -50,6 +60,8 @@ def complete(
         kwargs["api_key"] = api_key
     if api_base:
         kwargs["api_base"] = api_base
+    if model.startswith("ollama"):
+        kwargs["num_ctx"] = OLLAMA_NUM_CTX
 
     if schema is not None:
         json_schema = schema.model_json_schema()

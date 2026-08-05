@@ -10,11 +10,20 @@ instead of replaying the full interview conversation on every call.
 from flask import current_app
 
 from app.models import Course
+from app.services.document_chunking import Chunk
 from app.services.llm import complete
 from app.services.llm_schemas import CourseContextSchema, DocumentSummarySchema, validate_llm_json
 from app.services.model_selection import resolve_model_config
 from app.services.prompts import load_prompt
 from app.services.source_material_storage import load_source_material_text
+from app.services.vector_store import rank_chunks
+
+# What the interview/outline "what's this document about" summary is built
+# from - a retrieval-ranked sample of the document's own chunks rather than
+# its raw full text, so summarizing scales with relevance to this query,
+# not the document's raw length.
+DOCUMENT_OVERVIEW_QUERY = "overview and main topics of this document"
+DOCUMENT_OVERVIEW_TOP_K = 8
 
 
 def compact_course_context(course: Course) -> CourseContextSchema:
@@ -60,18 +69,28 @@ def render_course_context(course: Course) -> str:
     return "\n".join(lines)
 
 
-def summarize_document_for_interview(text: str, model_config: dict) -> str:
-    """Condense an attached document's extracted text to a short interview-shaping summary.
+def summarize_document_for_interview(chunks: list[Chunk], model_config: dict, embedding_config: dict) -> str:
+    """Condense an attached document's chunks to a short interview/outline-shaping summary.
 
     Called once per document at ingestion time (see course_generation.py's
     _ingest_source_materials()) and persisted onto SourceMaterial.interview_summary,
-    so the interview never re-sends (or re-summarizes) the full document text
-    on every turn. Outline/module generation still use the full text via
-    render_source_materials() — this summary is interview-specific.
+    so the interview never re-sends (or re-summarizes) the full document on
+    every turn. Now also doubles as what outline generation uses (see
+    render_source_material_summaries()) instead of the document's full raw
+    text - a document-size-independent summary rather than a raw-text cap
+    is what makes both scale to much larger documents.
+
+    Ranks the document's own just-chunked pieces against a generic "what's
+    this about" query (via vector_store.rank_chunks(), not the course's
+    persisted index - see that function's docstring for why) rather than
+    summarizing the full text directly, so a large document costs the same
+    to summarize as a small one.
 
     Args:
-        text: The document's extracted text.
-        model_config: Resolved model/provider settings (see model_selection.py).
+        chunks: The document's chunks, e.g. from document_chunking.chunk_pages().
+        model_config: Resolved completion model settings (see model_selection.py).
+        embedding_config: Resolved embedding model settings (see
+            model_selection.py's resolve_embedding_config()).
 
     Returns:
         A summary of at most 3 sentences.
@@ -79,8 +98,14 @@ def summarize_document_for_interview(text: str, model_config: dict) -> str:
     if current_app.config.get("LLM_TEST_MODE"):
         return "[MOCK] Summary of the document."
 
+    top_chunks = rank_chunks(chunks, DOCUMENT_OVERVIEW_QUERY, embedding_config, DOCUMENT_OVERVIEW_TOP_K)
+    excerpt = "\n\n".join(chunk.text for chunk in top_chunks)
+
     prompt = load_prompt("document_summary")
-    messages = [{"role": "system", "content": prompt}, {"role": "user", "content": text}]
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": f"Representative excerpts from the document:\n\n{excerpt}"},
+    ]
     raw = complete(messages=messages, schema=DocumentSummarySchema, **model_config)
     return validate_llm_json(raw, DocumentSummarySchema).summary
 

@@ -17,7 +17,8 @@ export type ModuleStatus = 'locked' | 'in_progress' | 'completed';
 
 export interface Citation {
   label: string;
-  url: string;
+  /** Absent for a document source-material citation (e.g. "paper.pdf, p. 4") - only a web citation has a real URL. */
+  url?: string;
 }
 
 export interface Activity {
@@ -133,10 +134,14 @@ export interface UserSettings {
   modelProvider: ModelProviderSettings;
   /**
    * Independently configurable from the completion model above, per the
-   * PRD's model-roles requirement. Not used by anything yet (retrieval and
-   * semantic search aren't built), but settable in advance.
+   * PRD's model-roles requirement. Powers document-grounded course
+   * generation (chunking and retrieval over uploaded source materials).
    */
   embeddingModel?: string;
+  /** Hosted tier only: whether the embedding model reuses modelProvider's API key. */
+  embeddingUseCompletionCredentials: boolean;
+  /** Whether a dedicated embedding API key is stored on the backend. The raw key is never sent back on read. */
+  hasEmbeddingApiKey: boolean;
   /** Whether a Tavily key is stored on the backend. The raw key is never sent back on read. */
   hasTavilyApiKey: boolean;
   /** Uses Tavily's slower, more thorough "advanced" search mode for module-generation searches. */
@@ -161,6 +166,9 @@ export interface UserSettingsPatch {
     byomModel?: string;
   };
   embeddingModel?: string;
+  embeddingUseCompletionCredentials?: boolean;
+  /** Write-only, like apiKey: sets a new embedding API key, never reads one back. */
+  embeddingApiKey?: string;
   /** Write-only, like apiKey: sets a new Tavily key, never reads one back. */
   tavilyApiKey?: string;
   deepSearchEnabled?: boolean;

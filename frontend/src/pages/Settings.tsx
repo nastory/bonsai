@@ -75,6 +75,8 @@ export function Settings() {
   const [apiKeyStatus, setApiKeyStatus] = useState<SaveStatus>('idle');
   const [tavilyKeyDraft, setTavilyKeyDraft] = useState('');
   const [tavilyKeyStatus, setTavilyKeyStatus] = useState<SaveStatus>('idle');
+  const [embeddingApiKeyDraft, setEmbeddingApiKeyDraft] = useState('');
+  const [embeddingApiKeyStatus, setEmbeddingApiKeyStatus] = useState<SaveStatus>('idle');
 
   // byomEndpoint/byomModel aren't secret, so it's fine to prefill and re-sync
   // when the fetched settings change, but still save on blur rather than per keystroke.
@@ -116,6 +118,16 @@ export function Settings() {
         setTavilyKeyStatus('saved');
       })
       .catch(() => setTavilyKeyStatus('error'));
+  };
+
+  const saveEmbeddingApiKeyIfChanged = () => {
+    if (!embeddingApiKeyDraft.trim()) return;
+    updateUserSettings({ embeddingApiKey: embeddingApiKeyDraft.trim() })
+      .then(() => {
+        setEmbeddingApiKeyDraft('');
+        setEmbeddingApiKeyStatus('saved');
+      })
+      .catch(() => setEmbeddingApiKeyStatus('error'));
   };
 
   const saveByomEndpointIfChanged = () => {
@@ -213,6 +225,64 @@ export function Settings() {
                     : 'No key set yet. '}
               Reliable tool-use support on this path means citations and retrieval work as designed.
             </p>
+
+            <div className="mt-2 border-t border-bonsai-border pt-3">
+              <p className="text-sm font-medium text-bonsai-text">Embedding model</p>
+              <p className="mt-0.5 text-xs text-bonsai-text-muted">
+                Powers document-grounded course generation (chunking and retrieval over uploaded source
+                materials).
+              </p>
+              <Input
+                className="mt-2"
+                placeholder="Embedding model (e.g. text-embedding-3-small)"
+                value={embeddingModelDraft}
+                onChange={(e) => setEmbeddingModelDraft(e.target.value)}
+                onBlur={saveEmbeddingModelIfChanged}
+              />
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-sm text-bonsai-text">Use the same API key for the embedding model</p>
+                <Toggle
+                  checked={user.embeddingUseCompletionCredentials}
+                  onChange={(embeddingUseCompletionCredentials) => save({ embeddingUseCompletionCredentials })}
+                />
+              </div>
+              {!user.embeddingUseCompletionCredentials && (
+                <>
+                  <KeyInput
+                    status={embeddingApiKeyStatus}
+                    className="mt-3"
+                    type="password"
+                    placeholder={
+                      user.hasEmbeddingApiKey ? 'Enter a new key to replace the current one' : 'Embedding API key'
+                    }
+                    value={embeddingApiKeyDraft}
+                    onChange={(e) => {
+                      setEmbeddingApiKeyDraft(e.target.value);
+                      setEmbeddingApiKeyStatus('idle');
+                    }}
+                    onBlur={saveEmbeddingApiKeyIfChanged}
+                  />
+                  <p
+                    className={cn(
+                      'mt-2 text-xs',
+                      embeddingApiKeyStatus === 'saved'
+                        ? 'text-green-600'
+                        : embeddingApiKeyStatus === 'error'
+                          ? 'text-red-600'
+                          : 'text-bonsai-text-muted',
+                    )}
+                  >
+                    {embeddingApiKeyStatus === 'saved'
+                      ? 'Saved.'
+                      : embeddingApiKeyStatus === 'error'
+                        ? 'Failed to save — try again.'
+                        : user.hasEmbeddingApiKey
+                          ? 'A key is configured.'
+                          : 'No key set yet.'}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div className="mt-4 space-y-3">
@@ -232,24 +302,22 @@ export function Settings() {
               Best-effort: local models vary in tool-use support, so retrieval and citation quality may be
               reduced compared to the hosted path.
             </p>
+
+            <div className="mt-2 border-t border-bonsai-border pt-3">
+              <p className="text-sm font-medium text-bonsai-text">Embedding model</p>
+              <p className="mt-0.5 text-xs text-bonsai-text-muted">
+                Powers document-grounded course generation. Served from the same local endpoint above.
+              </p>
+              <Input
+                className="mt-2"
+                placeholder="Embedding model name (e.g. nomic-embed-text)"
+                value={embeddingModelDraft}
+                onChange={(e) => setEmbeddingModelDraft(e.target.value)}
+                onBlur={saveEmbeddingModelIfChanged}
+              />
+            </div>
           </div>
         )}
-      </Card>
-
-      <Card className="mt-4">
-        <p className="font-semibold text-bonsai-text">Embedding Model</p>
-        <p className="mt-1 text-sm text-bonsai-text-muted">
-          Used for retrieval ranking and, later, semantic search over your course index. Configurable
-          separately from the completion model above, since it doesn't have to come from the same provider.
-          Doesn't do anything yet: nothing in Bonsai reads this setting until retrieval is built.
-        </p>
-        <Input
-          className="mt-3"
-          placeholder="Embedding model (e.g. text-embedding-3-small, nomic-embed-text)"
-          value={embeddingModelDraft}
-          onChange={(e) => setEmbeddingModelDraft(e.target.value)}
-          onBlur={saveEmbeddingModelIfChanged}
-        />
       </Card>
 
       <Card className="mt-4">

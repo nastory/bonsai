@@ -13,6 +13,7 @@ from app.services.course_generation import (
 )
 from app.services.document_extraction import DocumentExtractionError
 from app.services.llm_schemas import LLMOutputValidationError
+from app.services.model_selection import EmbeddingNotConfiguredError
 
 course_creation_bp = Blueprint("course_creation", __name__)
 
@@ -46,6 +47,8 @@ def create_course() -> tuple[Response, int]:
         abort(404, description=f"No course with id '{parent_course_id}'")
     except DocumentExtractionError as e:
         return jsonify({"error": str(e)}), 422
+    except EmbeddingNotConfiguredError as e:
+        return jsonify({"error": str(e)}), 422
     except LLMOutputValidationError as e:
         abort(502, description=f"The model's response couldn't be used: {e}")
     return jsonify(_interview_step_response(step)), 201
@@ -70,6 +73,8 @@ def post_interview_answer(course_id: str) -> Response:
     except CourseNotFoundError:
         abort(404, description=f"No course with id '{course_id}'")
     except DocumentExtractionError as e:
+        return jsonify({"error": str(e)}), 422
+    except EmbeddingNotConfiguredError as e:
         return jsonify({"error": str(e)}), 422
     except LLMOutputValidationError as e:
         abort(502, description=f"The model's response couldn't be used: {e}")

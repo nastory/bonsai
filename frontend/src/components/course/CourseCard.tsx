@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Check, ChevronRight } from 'lucide-react';
 import type { Course } from '../../types/course';
 import { ProgressBar } from '../ui/ProgressBar';
+import { InlineMarkdown } from '../ui/Markdown';
 import { cn } from '../ui/cn';
 
 interface CourseCardProps {
@@ -37,7 +38,9 @@ export function CourseCard({ course, selectable, selected, onToggleSelect }: Cou
       >
         <div className={`h-14 w-14 shrink-0 rounded-lg bg-gradient-to-br ${course.thumbnailUrl}`} />
         <div className="flex-1">
-          <p className="font-semibold text-bonsai-text">{course.title}</p>
+          <p className="font-semibold text-bonsai-text">
+            <InlineMarkdown>{course.title}</InlineMarkdown>
+          </p>
           <p className="text-sm text-bonsai-text-muted">
             {course.modules.length} modules
             {lessonCount > 0 ? ` • ${lessonCount} lessons` : ''}

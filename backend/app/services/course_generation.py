@@ -19,11 +19,11 @@ from app.services.course_context import (
     assemble_learning_history,
     compact_course_context,
     conversation_turns,
-    render_source_materials,
     render_source_material_summaries,
     summarize_document_for_interview,
 )
-from app.services.document_extraction import extract_text
+from app.services.document_chunking import chunk_pages
+from app.services.document_extraction import extract_pages, extract_text
 from app.services.llm import complete
 from app.services.llm_schemas import (
     CourseDirectionChangeSchema,
@@ -33,11 +33,12 @@ from app.services.llm_schemas import (
     PlannedActivitySchema,
     validate_llm_json,
 )
-from app.services.model_selection import resolve_model_config
+from app.services.model_selection import resolve_embedding_config, resolve_model_config
 from app.services.module_generation import ModuleNotFoundError
 from app.services.prompts import load_prompt
 from app.services.content_storage import delete_activity_content
 from app.services.source_material_storage import delete_source_material_text, save_source_material_text
+from app.services.vector_store import build_or_update_index, delete_vector_index
 
 MAX_INTERVIEW_QUESTIONS = 7
 
@@ -231,6 +232,8 @@ def delete_course(course_id: str) -> None:
                 delete_activity_content(activity.content_path)
     for material in course.source_materials:
         delete_source_material_text(material.text_path)
+    if course.vector_index_path:
+        delete_vector_index(course.vector_index_path)
     db.session.delete(course)
     db.session.commit()
 
@@ -509,17 +512,19 @@ def _get_module_or_raise(module_id: str) -> Module:
 
 
 def _ingest_source_materials(course: Course, files: list[FileStorage] | None) -> None:
-    """Extract, summarize, and persist text for any documents attached to this interview turn.
+    """Extract, chunk, embed, summarize, and persist any documents attached to this interview turn.
 
-    Writes each file's extracted text to disk and adds a SourceMaterial row
-    to the session, but doesn't itself commit: if extraction raises partway
-    through (e.g. an unsupported or corrupt file), nothing from this call —
-    not the course, not the interview-answer message, not any file already
-    processed in this same call — ends up persisted, since the caller's
-    single db.session.commit() never runs. resolve_model_config() can
-    trigger its own nested commit on first use (UserSettings.get_or_create()),
-    which is why callers must call this before adding the course/message to
-    the session themselves, not after.
+    Writes each file's extracted text to disk, chunks it and adds the
+    chunks to the course's vector index (see vector_store.py), and adds a
+    SourceMaterial row to the session — but doesn't itself commit: if
+    extraction raises partway through (e.g. an unsupported or corrupt
+    file), nothing from this call — not the course, not the interview-answer
+    message, not any file already processed in this same call — ends up
+    persisted, since the caller's single db.session.commit() never runs.
+    resolve_model_config()/resolve_embedding_config() can trigger their own
+    nested commit on first use (UserSettings.get_or_create()), which is why
+    callers must call this before adding the course/message to the session
+    themselves, not after.
 
     Args:
         course: The course these materials belong to.
@@ -527,17 +532,29 @@ def _ingest_source_materials(course: Course, files: list[FileStorage] | None) ->
 
     Raises:
         DocumentExtractionError: If a file's text can't be extracted.
+        EmbeddingNotConfiguredError: If no embedding model is set (needed
+            to chunk/embed the attached document).
     """
     files = [f for f in (files or []) if f and f.filename]
     if not files:
         return
 
     model_config = resolve_model_config()
+    embedding_config = resolve_embedding_config()
     for file_storage in files:
-        text = extract_text(file_storage.filename, file_storage.read())
+        content = file_storage.read()
+        text = extract_text(file_storage.filename, content)
         source_material = SourceMaterial(id=str(uuid4()), file_name=file_storage.filename, text_path="")
         source_material.text_path = save_source_material_text(source_material.id, text)
-        source_material.interview_summary = summarize_document_for_interview(text, model_config)
+
+        chunks = chunk_pages(file_storage.filename, extract_pages(file_storage.filename, content))
+        # Sets course.vector_index_path itself (see below) so a second file
+        # in this same call - or a document attached on a later interview
+        # turn - appends to the same course-level index instead of
+        # overwriting it.
+        course.vector_index_path = build_or_update_index(course, chunks, embedding_config)
+        source_material.interview_summary = summarize_document_for_interview(chunks, model_config, embedding_config)
+
         # Appending to the relationship (not db.session.add() + setting
         # course_id by hand) is what keeps course.source_materials correct
         # in-memory for the rest of this call — _advance_interview() reads
@@ -599,7 +616,7 @@ def _parent_context(course: Course) -> str:
 
     Empty string for an ordinary (non-branched) course, or if the parent
     somehow no longer exists — matches every other optional prompt section's
-    empty-string-means-omit convention (see render_source_materials()).
+    empty-string-means-omit convention (see render_source_material_summaries()).
 
     No up_to_module_position truncation needed: a module only gets a
     module_learning_digest once its content is actually generated (see
@@ -628,7 +645,9 @@ def _generate_outline_content(course: Course, revision_feedback: str | None) -> 
         return _mock_outline(course, revision_feedback)
 
     system_prompt = load_prompt(
-        "course_outline", source_materials=render_source_materials(course), parent_context=_parent_context(course)
+        "course_outline",
+        source_materials=render_source_material_summaries(course),
+        parent_context=_parent_context(course),
     )
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question", "outline_revision_request", "outline_presented"}

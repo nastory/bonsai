@@ -1,9 +1,13 @@
-"""Tests for module generation's document-grounded path.
+"""Tests for module generation's legacy whole-document fallback path.
 
-Per docs/course_creation_websearch_flow.md: when a course has uploaded
-source materials, module generation skips plan_activity_searches()/
-retrieve_for_module() entirely and grounds every activity in the document
-text instead (see module_generation.py's _generate_activities_content()).
+This exercises Course.source_materials present but Course.vector_index_path
+absent - source materials ingested before chunking/embedding existed (or
+whose embedding failed), which build_or_update_index() never populated. See
+module_generation.py's _generate_activities_content()/_module_seed_data_message().
+For the normal, current path (a real vector index present), see
+test_module_generation_vector_retrieval.py - that one grounds each activity
+in retrieved chunks rather than the whole document text, and never calls
+plan_activity_searches()/retrieve_for_module() either.
 """
 
 from app.extensions import db as _db

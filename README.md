@@ -14,12 +14,19 @@ export/import as a portable `.zip` archive (courses, progress, and settings, del
 keys). Every LLM response is schema-validated before it touches the database, and every generation call
 is constrained to that schema at the decoding level too (Ollama's structured output, OpenAI's Structured
 Outputs, Anthropic's forced-tool-call translation), not just checked after the fact — a malformed or
-off-shape model response fails clearly (a 502) instead of corrupting data or silently stalling. Settings
-covers hosted/BYOM model + endpoint configuration, an embedding model (unused so far — semantic search is
-Phase 3), and the Tavily key. What's ahead is Phase 2 (rich media, in-course visual aids via retrieval,
-"keep going/branch off" from a *completed* course, BYOM refinement, weekly learning-objective goals) and
-Phase 3 (polish, semantic search, community readiness) — see `bonsai_prd.md`'s Milestones and `design.md`'s
-Roadmap sections.
+off-shape model response fails clearly (a 502) instead of corrupting data or silently stalling. Grounding
+is chunk-and-retrieve, not whole-document-in-one-prompt, for both document uploads and web search alike:
+uploaded documents are chunked (page-aware, so citations carry a real page number) and Tavily search
+results are chunked too (tagged with their real url instead), both embedded into the same per-course
+FAISS vector index, so module generation retrieves each activity's most relevant chunks directly instead
+of paying an ever-growing prompt cost as a course's material grows — citations are attached
+deterministically from the chunks actually retrieved, never model-authored, regardless of source.
+Settings covers
+hosted/BYOM model + endpoint configuration, an embedding model (powers this retrieval, independently
+configurable and credentialed from the completion model), and the Tavily key. What's ahead is Phase 2
+(rich media, in-course visual aids via retrieval, "keep going/branch off" from a *completed* course, BYOM
+refinement, weekly learning-objective goals) and Phase 3 (polish, semantic search, community readiness) —
+see `bonsai_prd.md`'s Milestones and `design.md`'s Roadmap sections.
 
 ## Motivation
 I love continuous learning, but I get tired of having to search through sites like Udemy or Coursera looking for courses, not finding exactly what I need, and then paying for a course that only loosely lines up with what I actually want to learn.
@@ -64,7 +71,10 @@ bonsai/
     │   │   ├── prompts.py                 # loads app/prompts/*.md, fills in ${variables}
     │   │   ├── content_storage.py         # saves/loads an activity's generated content to/from disk
     │   │   ├── source_material_storage.py # saves/loads an uploaded document's extracted text
-    │   │   ├── document_extraction.py     # .txt/.docx/.pdf -> plain text, for course-grounding uploads
+    │   │   ├── document_extraction.py     # .txt/.docx/.pdf -> page-tagged plain text, for course-grounding uploads
+    │   │   ├── document_chunking.py       # splits extracted pages into overlapping, page-bounded retrieval chunks
+    │   │   ├── embedding.py               # LiteLLM/Ollama embedding wrapper, mocked in test mode
+    │   │   ├── vector_store.py            # per-course FAISS index: chunk storage, retrieval, and ranking
     │   │   ├── retrieval.py               # Tavily web search + page fetch, mocked in test mode
     │   │   ├── retrieval_agent.py         # unused model-driven tool-calling loop, kept for a possible future Q&A feature
     │   │   ├── course_context.py          # compacted course memory + real conversation-turn assembly, shared by every prompt

@@ -8,7 +8,7 @@ called and its response is unwrapped to plain text.
 from flask import Flask
 from pydantic import BaseModel
 
-from app.services.llm import complete, complete_with_tools
+from app.services.llm import OLLAMA_NUM_CTX, complete, complete_with_tools
 
 
 class _DummySchema(BaseModel):
@@ -140,6 +140,42 @@ def test_complete_requests_schema_constrained_json_for_ollama_models(monkeypatch
 
     assert captured["format"] == _DummySchema.model_json_schema()
     assert "response_format" not in captured
+
+
+def test_complete_sets_a_larger_num_ctx_for_ollama_models(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _FakeResponse("ok")
+
+    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+    with real_app.app_context():
+        complete(messages=[{"role": "user", "content": "Hi"}], model="ollama_chat/llama3", schema=_DummySchema)
+
+    assert captured["num_ctx"] == OLLAMA_NUM_CTX
+
+
+def test_complete_does_not_set_num_ctx_for_hosted_models(monkeypatch) -> None:
+    from app import create_app
+
+    real_app = create_app(test=False)
+    captured: dict = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _FakeResponse("ok")
+
+    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+    with real_app.app_context():
+        complete(messages=[{"role": "user", "content": "Hi"}], model="claude-3-5-sonnet-20241022", schema=_DummySchema)
+
+    assert "num_ctx" not in captured
 
 
 class _FakeToolCall:
