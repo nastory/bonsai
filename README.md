@@ -2,43 +2,21 @@
 
 An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
 
-**Status:** Phase 1 (complete). The full core loop is real, backed by the LLM (mocked in test mode) and
-verified against a real running Ollama instance end to end, not a scripted Phase 0 flow: course creation
-(interview -> outline -> revision -> approval, optionally grounded in an uploaded document, or "branched
-off" from a course the learner already worked through), incremental per-module lesson generation the
-first time a learner reaches it (readings, quizzes/assessments with a real correct answer + explanation,
-essays, projects, discussions — retrieval-grounded with citations when a Tavily key is configured),
-mid-course "change direction" (a fresh check-in interview that either replaces what's ahead in the same
-course or branches into a new one, leaving everything already completed untouched), and full data
-export/import as a portable `.zip` archive (courses, progress, and settings, deliberately excluding API
-keys). Every LLM response is schema-validated before it touches the database, and every generation call
-is constrained to that schema at the decoding level too (Ollama's structured output, OpenAI's Structured
-Outputs, Anthropic's forced-tool-call translation), not just checked after the fact — a malformed or
-off-shape model response fails clearly (a 502) instead of corrupting data or silently stalling. Grounding
-is chunk-and-retrieve, not whole-document-in-one-prompt, for both document uploads and web search alike:
-uploaded documents are chunked (page-aware, so citations carry a real page number) and Tavily search
-results are chunked too (tagged with their real url instead), both embedded into the same per-course
-FAISS vector index, so module generation retrieves each activity's most relevant chunks directly instead
-of paying an ever-growing prompt cost as a course's material grows — citations are attached
-deterministically from the chunks actually retrieved, never model-authored, regardless of source. A
-document-grounded course can also opt in (a toggle at upload time) to supplementing the document with web
-search rather than relying on it alone, and a reading activity can be illustrated with a real, retrieved
-image where one would clarify a concept (an opt-in setting, needs a Tavily key). Settings covers
-hosted/BYOM model + endpoint configuration, an embedding model (powers this retrieval, independently
-configurable and credentialed from the completion model), and the Tavily key. Finishing a course's last
-activity now marks it completed, surfacing a "Keep going" entry point on that course's home page (and a
-"Completed" badge in My Courses) that starts a fresh, related course via the same Branch Off mechanism
-used mid-course. A learner can also set an optional weekly goal for how many activities to complete
-(Settings), tracked against real completion timestamps and shown as progress on the Today dashboard —
-no penalty for missing it. A course can also get a real generated thumbnail image (an independently
-configurable model role, same pattern as the embedding model) instead of the default gradient placeholder,
-generated once the outline is approved; only OpenAI/Azure support image generation today, and an
-unconfigured or failing model just leaves a course on its gradient fallback, never blocking course
-creation. Five Phase 2 items are done (in-course visual aids, opt-in web-search supplementing, "keep
-going/branch off" from a *completed* course, weekly learning-objective goals, course thumbnail image
-generation); what's still ahead is the rest of Phase 2 (video embedding, BYOM refinement) and Phase 3
-(polish, semantic search, AI evals, community readiness) — see `bonsai_prd.md`'s Milestones and
-`design.md`'s Roadmap sections.
+**Status:** Phases 0 and 1 are complete, and Phase 2 is mostly done. Phase 1 stood up the real core loop end to end against a live Ollama instance: LLM-driven course creation, incremental per-module lesson generation with retrieval-grounded citations, quiz feedback, mid-course direction changes, and data export/import, all schema-validated so a malformed model response fails clearly instead of corrupting data. Phase 2 builds on that with a reworked chunk-and-embed retrieval pipeline (deterministic citations for both documents and web search), opt-in web search for document-grounded courses, illustrative images in readings, a "Keep going" path from a finished course, weekly activity goals, and generated course thumbnails. Only video embedding remains for Phase 2, and Phase 3 (polish, semantic search, AI evals, community readiness) hasn't started. See `bonsai_prd.md`'s Milestones and `design.md`'s Roadmap sections for full detail.
+
+## Screenshots
+
+**Today dashboard**, where you land. Shows an optional weekly learning-objective goal and a one-click way back into whatever you were last working through.
+
+<img src="frontend/src/assets/bonsai_home_screenshot.png" alt="Bonsai Today dashboard showing a weekly goal, a continue-learning card, and an up-next lesson" width="800" />
+
+**My Courses**: every course in progress or completed, with real progress tracked per course.
+
+<img src="frontend/src/assets/bonsai_course_list.png" alt="Bonsai My Courses page listing three courses with progress bars, one marked completed" width="800" />
+
+**Course creation**: a free-text, LLM-driven interview (or an attached document) shapes the course before any outline is generated.
+
+<img src="frontend/src/assets/bonsai_course_creation.png" alt="Bonsai course-creation chat interview asking about the learner's background with GPU programming" width="800" />
 
 ## Motivation
 I love continuous learning, but I get tired of having to search through sites like Udemy or Coursera looking for courses, not finding exactly what I need, and then paying for a course that only loosely lines up with what I actually want to learn.

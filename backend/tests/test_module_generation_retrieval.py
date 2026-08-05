@@ -175,3 +175,43 @@ def test_generate_module_activities_uses_advanced_search_depth_when_deep_search_
         generate_module_activities(module.id)
 
         assert captured_search_depth["value"] == "advanced"
+
+
+def test_generate_module_activities_falls_back_to_raw_results_without_embedding_model(
+    real_llm_app, monkeypatch
+) -> None:
+    """A Tavily key with no embedding model configured must not 500 (see docs/todo.md).
+
+    Before the fix this raised EmbeddingNotConfiguredError, uncaught by the
+    generate-activities route, for any course with search results to embed
+    and no embedding model set. Grounding should fall back to the raw
+    fetched results per activity instead, still with a deterministic
+    citation.
+    """
+    with real_llm_app.app_context():
+        settings = UserSettings.get_or_create()
+        settings.tavily_api_key = "tvly-configured"
+        # Deliberately not setting settings.embedding_model.
+        _db.session.commit()
+        module = _make_module()
+
+        monkeypatch.setattr(
+            "app.services.module_retrieval.web_search",
+            lambda query, api_key, search_depth="basic": [
+                {"title": "A GPU Primer", "url": "https://example.com/gpu-primer", "content": "GPUs are..."}
+            ],
+        )
+
+        def fail_if_called(**kwargs):
+            raise AssertionError("embedding should not be called without a configured embedding model")
+
+        monkeypatch.setattr("app.services.embedding.litellm.embedding", fail_if_called)
+        captured_prompts: list = []
+        monkeypatch.setattr("app.services.llm.litellm.completion", _mock_completion(captured_prompts))
+
+        module_result = generate_module_activities(module.id)
+
+        assert "GPUs are..." in captured_prompts[1]
+        assert module.course.vector_index_path is None
+        citations = module_result.activities[0].to_dict()["citations"]
+        assert citations == [{"label": "A GPU Primer", "url": "https://example.com/gpu-primer"}]

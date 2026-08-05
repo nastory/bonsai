@@ -59,7 +59,7 @@ from app.services.llm_schemas import (
     VisualAidPlanSchema,
     validate_llm_json,
 )
-from app.services.model_selection import resolve_embedding_config, resolve_model_config
+from app.services.model_selection import EmbeddingNotConfiguredError, resolve_embedding_config, resolve_model_config
 from app.services.module_retrieval import plan_activity_searches, retrieve_for_module
 from app.services.prompts import load_prompt
 from app.services.retrieval import image_search
@@ -123,6 +123,20 @@ def generate_module_activities(module_id: str) -> Module:
     return module
 
 
+def _try_resolve_embedding_config() -> dict | None:
+    """Best-effort resolve_embedding_config(): None instead of raising when unconfigured.
+
+    Module generation shouldn't hard-fail just because no embedding model
+    is set - grounding falls back to raw source text/search results instead
+    (see _generate_activities_content()), same as before the embedding-backed
+    RAG rework, just without semantic per-activity relevance ranking.
+    """
+    try:
+        return resolve_embedding_config()
+    except EmbeddingNotConfiguredError:
+        return None
+
+
 def _get_module_or_raise(module_id: str) -> Module:
     module = db.session.get(Module, module_id)
     if module is None:
@@ -135,6 +149,7 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
         return _mock_activities(module)
 
     model_config = resolve_model_config()
+    embedding_config = _try_resolve_embedding_config()
     results_by_activity: dict[int, list[dict]] = {}
     citations_by_activity: dict[int, list[CitationSchema]] = {}
 
@@ -147,28 +162,46 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
         # material, there's no way to query an arbitrary web corpus by
         # embedding alone) - planned unconditionally, even without a Tavily
         # key configured (retrieve_for_module() already returns empty
-        # results for every activity in that case). The fetched content is
-        # then chunked and embedded into the course's vector index rather
-        # than used raw - same storage/retrieval mechanism a document gets,
-        # just fed by a fresh Tavily fetch instead of an upload. Guarded by
-        # `if web_chunks` so a key-less or empty-results course never pays
-        # for an embedding call it doesn't need.
+        # results for every activity in that case).
         settings = UserSettings.get_or_create()
         search_plan = plan_activity_searches(module, model_config)
         search_results = retrieve_for_module(
             module, search_plan, settings.tavily_api_key, settings.deep_search_enabled
         )
-        web_chunks = [
-            chunk
-            for results in search_results.values()
-            for r in results
-            for chunk in chunk_pages(r["title"], [(None, r["content"])], url=r["url"])
-        ]
-        if web_chunks:
-            embedding_config = resolve_embedding_config()
-            module.course.vector_index_path = build_or_update_index(module.course, web_chunks, embedding_config)
+        if embedding_config:
+            # The fetched content is chunked and embedded into the course's
+            # vector index rather than used raw - same storage/retrieval
+            # mechanism a document gets, just fed by a fresh Tavily fetch
+            # instead of an upload. Guarded by `if web_chunks` so a key-less
+            # or empty-results course never pays for an embedding call it
+            # doesn't need.
+            web_chunks = [
+                chunk
+                for results in search_results.values()
+                for r in results
+                for chunk in chunk_pages(r["title"], [(None, r["content"])], url=r["url"])
+            ]
+            if web_chunks:
+                module.course.vector_index_path = build_or_update_index(module.course, web_chunks, embedding_config)
+        else:
+            # No embedding model configured: ground each activity on its
+            # raw fetched results directly, same as before the RAG rework.
+            # Still deterministic - retrieve_for_module() already returns
+            # results keyed per activity, so citations don't need the model
+            # to author them here either, just a lower-quality (unranked by
+            # semantic relevance) version of the same grounding.
+            results_by_activity = {
+                i: [{"source": r["title"], "content": r["content"]} for r in results]
+                for i, results in search_results.items()
+                if results
+            }
+            citations_by_activity = {
+                i: [CitationSchema(label=r["title"], url=r["url"]) for r in results]
+                for i, results in search_results.items()
+                if results
+            }
 
-    if module.course.vector_index_path:
+    if module.course.vector_index_path and embedding_config:
         # Covers document-grounded, web-grounded, and a supplemented course
         # (both at once - just indexed above if this course had no index
         # yet). One retrieval mechanism regardless of source: the
@@ -179,7 +212,6 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
         # activity in the module, then fast local FAISS searches - no
         # threading needed, there's no per-activity network I/O here the way
         # Tavily fetches themselves have.
-        embedding_config = resolve_embedding_config()
         queries = [f"{a['title']}: {a['plan']}" for a in module.activity_plan]
         chunk_results = query_vector_store(module.course, queries, embedding_config, top_k=MAX_CHUNKS_PER_ACTIVITY)
         results_by_activity = {
@@ -190,15 +222,21 @@ def _generate_activities_content(module: Module) -> list[GeneratedActivitySchema
             i: [CitationSchema(label=_chunk_citation_label(c), url=c.url) for c in chunks]
             for i, chunks in chunk_results.items()
         }
-    # else: source materials exist but no index yet (ingested before
-    # chunking/embedding was added, or embedding failed at ingestion time) -
-    # no per-activity retrieval is possible. Falls through to
+    # else: either source materials exist but no index is usable right now
+    # (ingested before chunking/embedding was added, embedding failed at
+    # ingestion time, or no embedding model is configured at all) - no
+    # per-activity chunk retrieval is possible - or this was the no-embedding
+    # web branch above, which already populated results_by_activity/
+    # citations_by_activity itself. Falls through to
     # _module_seed_data_message()'s own legacy whole-document fallback below
     # instead of leaving these activities completely ungrounded.
 
+    use_raw_source_materials = bool(module.course.source_materials) and not (
+        module.course.vector_index_path and embedding_config
+    )
     messages = [
         {"role": "system", "content": load_prompt("module_activity_generation")},
-        {"role": "user", "content": _module_seed_data_message(module)},
+        {"role": "user", "content": _module_seed_data_message(module, use_raw_source_materials)},
     ]
     generated: list[GeneratedActivitySchema] = []
     for i, planned in enumerate(module.activity_plan):
@@ -290,7 +328,7 @@ def _plan_visual_aids(body: str, model_config: dict) -> VisualAidPlanSchema:
     return validate_llm_json(raw, VisualAidPlanSchema)
 
 
-def _module_seed_data_message(module: Module) -> str:
+def _module_seed_data_message(module: Module, use_raw_source_materials: bool) -> str:
     outcomes = "\n".join(f"- {outcome}" for outcome in module.learning_outcomes)
     parts = [
         assemble_learning_history(module.course),
@@ -298,12 +336,14 @@ def _module_seed_data_message(module: Module) -> str:
         f"This module's learning outcomes:\n{outcomes}",
         f"The full planned sequence of activities for this module:\n{_format_activity_plan(module.activity_plan)}",
     ]
-    if module.course.source_materials and not module.course.vector_index_path:
-        # Legacy fallback: see _generate_activities_content()'s matching
-        # comment - only reached when chunking/embedding wasn't available
-        # at ingestion time. Whole-document-in-one-block is worse for large
+    if use_raw_source_materials:
+        # Legacy/no-embedding fallback: see _generate_activities_content()'s
+        # matching comment - reached when no chunk-retrieval index is
+        # usable for this call (never built, ingested before
+        # chunking/embedding existed, or no embedding model is currently
+        # configured). Whole-document-in-one-block is worse for large
         # documents (see this module's docstring) but strictly better than
-        # no grounding at all for these older courses.
+        # no grounding at all.
         source_materials = render_source_materials(module.course)
         if source_materials:
             parts.append(

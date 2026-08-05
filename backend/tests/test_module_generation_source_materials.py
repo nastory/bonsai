@@ -123,6 +123,44 @@ def test_document_grounded_activity_has_no_citations_when_response_omits_them(re
         assert result.activities[0].to_dict().get("citations") is None
 
 
+def test_document_grounded_module_falls_back_to_raw_text_when_embedding_unavailable(
+    real_llm_app, monkeypatch
+) -> None:
+    """A stale vector_index_path that can't be queried right now (no embedding
+    model currently configured) must not 500 - falls back to the same
+    raw-text grounding as a course whose index was never built. See
+    docs/todo.md: this is the second of the two crash points the
+    embedding-required-for-grounding bug had, alongside the web-only one
+    covered in test_module_generation_retrieval.py.
+    """
+    with real_llm_app.app_context():
+        module = _make_module_with_source_material()
+        module.course.vector_index_path = "some/stale/index.faiss"
+        _db.session.commit()
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("the vector store should not be queried without a configured embedding model")
+
+        monkeypatch.setattr("app.services.module_generation.query_vector_store", fail_if_called)
+
+        captured_calls: list[list[dict]] = []
+        canned = [
+            '{"type": "reading", "title": "Intro", "estimatedMinutes": 10, "body": "b"}',
+            '{"digest": "Covered the basics."}',
+        ]
+
+        def fake_completion(**kwargs):
+            captured_calls.append(kwargs["messages"])
+            return _FakeResponse(canned[len(captured_calls) - 1])
+
+        monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+        generate_module_activities(module.id)
+
+        seed_data_message = captured_calls[0][1]["content"]
+        assert "GPU memory coalescing improves throughput significantly." in seed_data_message
+
+
 def test_document_grounded_module_generates_successfully_under_llm_test_mode(client, db) -> None:
     course = Course(
         id="c1", title="GPU Programming", description="d", prerequisites=[],

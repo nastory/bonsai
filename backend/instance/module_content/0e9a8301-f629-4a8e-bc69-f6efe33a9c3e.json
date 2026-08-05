@@ -1,1 +1,0 @@
-{"body": null, "question": null, "options": null, "prompt": "Using a programming library of your choice (e.g. TensorFlow, PyTorch), implement a simple CNN that uses convolutional layers and pooling layers to classify handwritten digits (e.g. MNIST dataset). Be sure to include a brief explanation of your code in the project submission."}

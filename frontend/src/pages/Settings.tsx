@@ -262,14 +262,15 @@ export function Settings() {
                   : modelProvider.hasApiKey
                     ? 'A key is configured. '
                     : 'No key set yet. '}
-              Reliable tool-use support on this path means citations and retrieval work as designed.
+              The most reliable path for generation quality and well-formed output.
             </p>
 
             <div className="mt-2 border-t border-bonsai-border pt-3">
               <p className="text-sm font-medium text-bonsai-text">Embedding model</p>
               <p className="mt-0.5 text-xs text-bonsai-text-muted">
-                Powers document-grounded course generation (chunking and retrieval over uploaded source
-                materials).
+                Powers retrieval for both document- and web-grounded course generation. Without one set,
+                grounding falls back to raw source text instead of targeted retrieval, which may produce
+                lower-quality material.
               </p>
               <Input
                 className="mt-2"
@@ -400,14 +401,17 @@ export function Settings() {
               onBlur={saveByomModelIfChanged}
             />
             <p className="text-xs text-bonsai-text-muted">
-              Best-effort: local models vary in tool-use support, so retrieval and citation quality may be
-              reduced compared to the hosted path.
+              Best-effort: local models vary in instruction-following and output reliability compared to the
+              hosted path. Citations are attached automatically from retrieved material either way, so
+              citation accuracy doesn't depend on the model.
             </p>
 
             <div className="mt-2 border-t border-bonsai-border pt-3">
               <p className="text-sm font-medium text-bonsai-text">Embedding model</p>
               <p className="mt-0.5 text-xs text-bonsai-text-muted">
-                Powers document-grounded course generation. Served from the same local endpoint above.
+                Powers retrieval for both document- and web-grounded course generation. Served from the same
+                local endpoint above. Without one set, grounding falls back to raw source text instead of
+                targeted retrieval, which may produce lower-quality material.
               </p>
               <Input
                 className="mt-2"
