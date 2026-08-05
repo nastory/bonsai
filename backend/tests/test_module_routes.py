@@ -69,34 +69,18 @@ def _make_course_with_a_completed_module(course_id: str = "c2") -> Module:
     return completed
 
 
-def test_direction_interview_returns_404_for_unknown_module(client, db) -> None:
-    response = client.post("/api/modules/does-not-exist/direction-interview", json={"message": "hi"})
-
-    assert response.status_code == 404
-
-
-def test_direction_interview_messages_returns_404_for_unknown_module(client, db) -> None:
-    response = client.post("/api/modules/does-not-exist/direction-interview-messages", json={"answer": "hi"})
-
-    assert response.status_code == 404
-
-
-def test_direction_outline_returns_404_for_unknown_module(client, db) -> None:
-    response = client.post("/api/modules/does-not-exist/direction-outline")
-
-    assert response.status_code == 404
-
-
-def test_direction_outline_feedback_returns_404_for_unknown_module(client, db) -> None:
-    response = client.post("/api/modules/does-not-exist/direction-outline-feedback", json={"feedback": "shorter"})
-
-    assert response.status_code == 404
-
-
-def test_direction_outline_approve_returns_404_for_unknown_module(client, db) -> None:
-    response = client.post("/api/modules/does-not-exist/direction-outline-approve")
-
-    assert response.status_code == 404
+def test_direction_change_routes_return_404_for_unknown_module(client, db) -> None:
+    assert client.post(
+        "/api/modules/does-not-exist/direction-interview", json={"message": "hi"}
+    ).status_code == 404
+    assert client.post(
+        "/api/modules/does-not-exist/direction-interview-messages", json={"answer": "hi"}
+    ).status_code == 404
+    assert client.post("/api/modules/does-not-exist/direction-outline").status_code == 404
+    assert client.post(
+        "/api/modules/does-not-exist/direction-outline-feedback", json={"feedback": "shorter"}
+    ).status_code == 404
+    assert client.post("/api/modules/does-not-exist/direction-outline-approve").status_code == 404
 
 
 def test_direction_change_full_flow_via_http(client, db) -> None:

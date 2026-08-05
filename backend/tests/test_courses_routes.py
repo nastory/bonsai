@@ -88,18 +88,11 @@ def test_delete_course_returns_404_for_unknown_course(client, db) -> None:
     assert response.status_code == 404
 
 
-def test_get_course_thumbnail_returns_404_when_none_generated(client, db) -> None:
+def test_get_course_thumbnail_returns_404_when_none_generated_or_unknown_course(client, db) -> None:
     _seed_course(db)
 
-    response = client.get("/api/courses/gpu-programming/thumbnail")
-
-    assert response.status_code == 404
-
-
-def test_get_course_thumbnail_returns_404_for_unknown_course(client, db) -> None:
-    response = client.get("/api/courses/does-not-exist/thumbnail")
-
-    assert response.status_code == 404
+    assert client.get("/api/courses/gpu-programming/thumbnail").status_code == 404
+    assert client.get("/api/courses/does-not-exist/thumbnail").status_code == 404
 
 
 def test_get_course_thumbnail_serves_the_generated_image(client, db, app) -> None:

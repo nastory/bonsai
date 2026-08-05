@@ -10,13 +10,6 @@ from pathlib import Path
 from app.services.content_storage import delete_activity_content, load_activity_content, save_activity_content
 
 
-def test_save_activity_content_returns_a_path(app) -> None:
-    with app.app_context():
-        path = save_activity_content("activity-1", {"body": "Some reading content."})
-
-        assert path.endswith("activity-1.json")
-
-
 def test_save_activity_content_returns_a_path_relative_to_instance_path(app) -> None:
     # Not absolute: instance_path itself differs between a native run and a
     # container (the same bind-mounted file is /app/instance in Docker but
@@ -25,6 +18,7 @@ def test_save_activity_content_returns_a_path_relative_to_instance_path(app) -> 
     with app.app_context():
         path = save_activity_content("activity-1", {"body": "Some reading content."})
 
+        assert path.endswith("activity-1.json")
         assert not Path(path).is_absolute()
 
 

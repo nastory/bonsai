@@ -14,17 +14,11 @@ from app.services.thumbnail_storage import (
 )
 
 
-def test_save_thumbnail_image_returns_a_path(app) -> None:
-    with app.app_context():
-        path = save_thumbnail_image("course-1", b"fake-png-bytes")
-
-        assert path.endswith("course-1.png")
-
-
 def test_save_thumbnail_image_returns_a_path_relative_to_instance_path(app) -> None:
     with app.app_context():
         path = save_thumbnail_image("course-1", b"fake-png-bytes")
 
+        assert path.endswith("course-1.png")
         assert not Path(path).is_absolute()
 
 

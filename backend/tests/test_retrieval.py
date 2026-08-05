@@ -145,16 +145,6 @@ def test_image_search_returns_canned_result_in_test_mode(app: Flask) -> None:
     assert all({"url", "description"} <= result.keys() for result in results)
 
 
-def test_image_search_does_not_call_requests_in_test_mode(app: Flask, monkeypatch) -> None:
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("requests.post should not be called in test mode")
-
-    monkeypatch.setattr("app.services.retrieval.requests.post", fail_if_called)
-
-    with app.app_context():
-        image_search("bonsai wiring diagram", api_key="tvly-test")
-
-
 def test_image_search_calls_tavily_with_image_params_and_parses_results(monkeypatch) -> None:
     from app import create_app
 

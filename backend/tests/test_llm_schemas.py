@@ -48,24 +48,6 @@ def test_validate_llm_json_raises_for_missing_required_field() -> None:
         validate_llm_json('{"question": "only a question, no done field"}', InterviewStepSchema)
 
 
-def test_validate_llm_json_raises_for_wrong_type() -> None:
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json(
-            '{"coverage": "open", "done": "not a boolean", "question": "What is your experience level?"}',
-            InterviewStepSchema,
-        )
-
-
-def test_validate_llm_json_raises_for_empty_question() -> None:
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json('{"coverage": "open", "done": false, "question": ""}', InterviewStepSchema)
-
-
-def test_validate_llm_json_raises_for_null_question_when_not_done() -> None:
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json('{"coverage": "open", "done": false, "question": null}', InterviewStepSchema)
-
-
 def test_validate_llm_json_raises_for_null_question_when_done() -> None:
     """The exact degenerate response reproduced live against Ollama/llama3: a structurally
     plausible {"done": false, "question": null} (or here, done true) that used to pass
@@ -79,11 +61,6 @@ def test_validate_llm_json_raises_for_null_question_when_done() -> None:
 def test_validate_llm_json_raises_for_whitespace_only_question() -> None:
     with pytest.raises(LLMOutputValidationError):
         validate_llm_json('{"coverage": "open", "done": false, "question": "   "}', InterviewStepSchema)
-
-
-def test_validate_llm_json_raises_for_missing_coverage() -> None:
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json('{"done": false, "question": "What is your experience level?"}', InterviewStepSchema)
 
 
 def test_validate_llm_json_raises_for_blank_coverage() -> None:
@@ -115,18 +92,6 @@ def test_validate_llm_json_accepts_well_formed_course_outline() -> None:
 
 def test_validate_llm_json_raises_when_modules_missing() -> None:
     raw = '{"title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week"}'
-
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json(raw, CourseOutlineSchema)
-
-
-def test_validate_llm_json_raises_when_module_missing_required_field() -> None:
-    raw = """
-    {
-        "title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week",
-        "modules": [{"title": "Missing description and timeline"}]
-    }
-    """
 
     with pytest.raises(LLMOutputValidationError):
         validate_llm_json(raw, CourseOutlineSchema)

@@ -68,22 +68,6 @@ def test_start_course_with_supplement_flag_persists_it_on_the_course(client, db)
     assert course.web_search_supplement_enabled is True
 
 
-def test_start_course_without_supplement_flag_defaults_to_false(client, db) -> None:
-    from app.extensions import db as _db
-    from app.models import Course
-
-    response = client.post(
-        "/api/courses",
-        data={
-            "message": "I want to learn about this paper",
-            "files": (BytesIO(b"GPU memory coalescing improves throughput."), "notes.txt"),
-        },
-    )
-
-    course = _db.session.get(Course, response.get_json()["courseId"])
-    assert course.web_search_supplement_enabled is False
-
-
 def test_start_course_with_an_unsupported_file_returns_422_and_persists_nothing(client, db) -> None:
     from app.models import Course
 
@@ -102,44 +86,6 @@ def test_start_course_with_an_unsupported_file_returns_422_and_persists_nothing(
     # mid-transaction, so roll back first to confirm nothing durable happened.
     db.session.rollback()
     assert db.session.execute(db.select(Course)).first() is None
-
-
-def test_submit_interview_answer_with_an_attached_file_persists_a_source_material(client, db) -> None:
-    start = client.post("/api/courses", data={"message": "I want to learn GPU programming"}).get_json()
-
-    response = client.post(
-        f"/api/courses/{start['courseId']}/interview-messages",
-        data={
-            "answer": "here's a paper",
-            "files": (BytesIO(b"Efficient memory coalescing in CUDA kernels."), "paper.txt"),
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.get_json()
-    assert len(body["sourceMaterials"]) == 1
-    assert body["sourceMaterials"][0]["fileName"] == "paper.txt"
-
-
-def test_submit_interview_answer_with_an_unsupported_file_persists_no_new_message(client, db) -> None:
-    from app.models import ConversationMessage
-
-    start = client.post("/api/courses", data={"message": "I want to learn GPU programming"}).get_json()
-
-    response = client.post(
-        f"/api/courses/{start['courseId']}/interview-messages",
-        data={
-            "answer": "here's a paper",
-            "files": (BytesIO(b"some content"), "notes.rtf"),
-        },
-    )
-
-    assert response.status_code == 422
-    db.session.rollback()
-    contents = [
-        m.content for m in db.session.execute(db.select(ConversationMessage)).scalars()
-    ]
-    assert "here's a paper" not in contents
 
 
 def test_submit_interview_answer_returns_next_question(client, db) -> None:

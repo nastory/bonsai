@@ -37,13 +37,15 @@ def _find_module(body, module_id):
     return next(m for m in body["modules"] if m["id"] == module_id)
 
 
-def test_complete_activity_marks_it_completed(client, db) -> None:
+def test_complete_activity_marks_it_completed_without_touching_course_stage(client, db) -> None:
     _seed_course_with_two_modules(db)
 
     response = client.post("/api/activities/a1/complete")
 
     assert response.status_code == 200
-    assert _find_activity(response.get_json(), "a1")["status"] == "completed"
+    body = response.get_json()
+    assert _find_activity(body, "a1")["status"] == "completed"
+    assert body["stage"] == "active"
 
 
 def test_complete_activity_sets_completed_at(client, db) -> None:
@@ -67,7 +69,7 @@ def test_completing_activity_does_not_lock_or_change_sibling_activities(client, 
     assert _find_activity(response.get_json(), "a2")["status"] == "available"
 
 
-def test_completing_last_activity_completes_module_and_unlocks_next_module(client, db) -> None:
+def test_completing_last_activity_completes_module_unlocks_next_and_leaves_course_stage_unchanged(client, db) -> None:
     _seed_course_with_two_modules(db)
     client.post("/api/activities/a1/complete")
 
@@ -76,6 +78,7 @@ def test_completing_last_activity_completes_module_and_unlocks_next_module(clien
     body = response.get_json()
     assert _find_module(body, "m1")["status"] == "completed"
     assert _find_module(body, "m2")["status"] == "in_progress"
+    assert body["stage"] == "active"
 
 
 def test_complete_activity_persists_across_requests(client, db) -> None:
@@ -91,23 +94,6 @@ def test_complete_unknown_activity_returns_404(client, db) -> None:
     response = client.post("/api/activities/does-not-exist/complete")
 
     assert response.status_code == 404
-
-
-def test_completing_last_activity_of_non_final_module_leaves_stage_unchanged(client, db) -> None:
-    _seed_course_with_two_modules(db)
-    client.post("/api/activities/a1/complete")
-
-    response = client.post("/api/activities/a2/complete")
-
-    assert response.get_json()["stage"] == "active"
-
-
-def test_completing_non_last_activity_leaves_stage_unchanged(client, db) -> None:
-    _seed_course_with_two_modules(db)
-
-    response = client.post("/api/activities/a1/complete")
-
-    assert response.get_json()["stage"] == "active"
 
 
 def test_completing_last_activity_of_last_module_marks_course_completed(client, db) -> None:

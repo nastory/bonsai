@@ -145,21 +145,11 @@ def test_resolve_image_generation_config_raises_when_not_configured(real_llm_app
             resolve_image_generation_config()
 
 
-def test_resolve_image_generation_config_byom_uses_ollama_prefix_and_completion_endpoint(real_llm_app) -> None:
-    with real_llm_app.app_context():
-        settings = UserSettings.get_or_create()
-        settings.model_provider_tier = "byom"
-        settings.model_provider_byom_endpoint = "http://localhost:11434"
-        settings.image_generation_model = "some-image-model"
-
-        config = resolve_image_generation_config()
-
-    assert config["model"] == "ollama/some-image-model"
-    assert config["api_base"] == "http://localhost:11434"
-    assert "api_key" not in config
-
-
 def test_resolve_image_generation_config_hosted_reuses_completion_credentials_by_default(real_llm_app) -> None:
+    # Tier branching (BYOM/hosted-shared/hosted-dedicated) mirrors
+    # resolve_embedding_config() exactly (see the docstring) and is fully
+    # exercised by that function's own tests above - this just proves the
+    # image-generation-specific model field routes through correctly.
     with real_llm_app.app_context():
         settings = UserSettings.get_or_create()
         settings.model_provider_tier = "hosted"
@@ -170,17 +160,3 @@ def test_resolve_image_generation_config_hosted_reuses_completion_credentials_by
 
     assert config["model"] == "dall-e-3"
     assert config["api_key"] == "sk-completion"
-
-
-def test_resolve_image_generation_config_hosted_uses_dedicated_key_when_not_reusing_credentials(real_llm_app) -> None:
-    with real_llm_app.app_context():
-        settings = UserSettings.get_or_create()
-        settings.model_provider_tier = "hosted"
-        settings.model_provider_api_key = "sk-completion"
-        settings.image_generation_model = "dall-e-3"
-        settings.image_generation_use_completion_credentials = False
-        settings.image_generation_api_key = "sk-image"
-
-        config = resolve_image_generation_config()
-
-    assert config["api_key"] == "sk-image"

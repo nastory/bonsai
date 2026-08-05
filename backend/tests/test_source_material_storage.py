@@ -13,17 +13,11 @@ from app.services.source_material_storage import (
 )
 
 
-def test_save_source_material_text_returns_a_path(app) -> None:
-    with app.app_context():
-        path = save_source_material_text("src-1", "Extracted text about GPU memory coalescing.")
-
-        assert path.endswith("src-1.txt")
-
-
 def test_save_source_material_text_returns_a_path_relative_to_instance_path(app) -> None:
     with app.app_context():
         path = save_source_material_text("src-1", "Some extracted text.")
 
+        assert path.endswith("src-1.txt")
         assert not Path(path).is_absolute()
 
 

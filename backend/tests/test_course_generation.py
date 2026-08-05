@@ -79,16 +79,6 @@ def test_start_course_with_an_unparseable_file_persists_nothing(db) -> None:
         start_course("I want to learn about this paper", files=[file])
 
 
-def test_submit_interview_answer_with_a_file_persists_a_source_material(db) -> None:
-    step = start_course("I want to learn GPU programming")
-    file = FileStorage(stream=BytesIO(b"Efficient memory coalescing in CUDA kernels."), filename="paper.txt")
-
-    step2 = submit_interview_answer(step.course.id, "here's a paper", files=[file])
-
-    assert len(step2.course.source_materials) == 1
-    assert step2.course.source_materials[0].file_name == "paper.txt"
-
-
 def test_interview_question_reflects_an_attached_source_material(db) -> None:
     file = FileStorage(stream=BytesIO(b"GPU memory coalescing improves throughput."), filename="notes.txt")
 

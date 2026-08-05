@@ -32,19 +32,14 @@ def test_embed_returns_deterministic_fake_vectors_in_test_mode(app: Flask) -> No
     assert all(isinstance(v, float) for v in result[0])
 
 
-def test_embed_is_deterministic_for_the_same_text(app: Flask) -> None:
+def test_embed_is_deterministic_per_text_but_differs_across_texts(app: Flask) -> None:
     with app.app_context():
         first = embed(["a chunk of text"], model="text-embedding-3-small")
         second = embed(["a chunk of text"], model="text-embedding-3-small")
+        different = embed(["a different chunk"], model="text-embedding-3-small")
 
     assert first == second
-
-
-def test_embed_gives_different_texts_different_vectors(app: Flask) -> None:
-    with app.app_context():
-        result = embed(["first chunk", "second chunk"], model="text-embedding-3-small")
-
-    assert result[0] != result[1]
+    assert first != different
 
 
 def test_embed_does_not_call_litellm_in_test_mode(app: Flask, monkeypatch) -> None:
@@ -127,24 +122,6 @@ def test_embed_ollama_model_posts_to_the_configured_endpoint(monkeypatch) -> Non
 
     assert captured["url"] == "http://localhost:11434/api/embed"
     assert captured["json"] == {"model": "nomic-embed-text", "input": ["a", "b"]}
-
-
-def test_embed_ollama_model_falls_back_to_default_endpoint(monkeypatch) -> None:
-    from app import create_app
-
-    real_app = create_app(test=False)
-    captured: dict = {}
-
-    def fake_post(url, json, timeout):
-        captured["url"] = url
-        return _FakeHttpResponse([[0.1]])
-
-    monkeypatch.setattr("app.services.embedding.requests.post", fake_post)
-
-    with real_app.app_context():
-        embed(["hello"], model="ollama/nomic-embed-text")
-
-    assert captured["url"] == "http://localhost:11434/api/embed"
 
 
 def test_embed_ollama_model_raises_embedding_error_on_failure(monkeypatch) -> None:

@@ -12,20 +12,14 @@ def _make_course(course_id="c1", **overrides):
     return Course(**defaults)
 
 
-def test_course_stage_defaults_to_active(db) -> None:
-    course = _make_course()
-    db.session.add(course)
+def test_course_stage_defaults_to_active_but_can_be_created_in_interview_stage(db) -> None:
+    default_course = _make_course()
+    interview_course = _make_course(course_id="c2", stage="interview")
+    db.session.add_all([default_course, interview_course])
     db.session.commit()
 
     assert db.session.get(Course, "c1").stage == "active"
-
-
-def test_course_can_be_created_in_interview_stage(db) -> None:
-    course = _make_course(stage="interview")
-    db.session.add(course)
-    db.session.commit()
-
-    assert db.session.get(Course, "c1").stage == "interview"
+    assert db.session.get(Course, "c2").stage == "interview"
 
 
 def test_course_parent_course_id_links_to_another_course(db) -> None:
@@ -66,30 +60,22 @@ def test_conversation_messages_are_ordered_by_creation(db) -> None:
     assert [m.content for m in fetched.conversation] == ["first", "second"]
 
 
-def test_conversation_message_can_be_attributed_to_a_module(db) -> None:
+def test_conversation_message_module_id_defaults_to_none_but_can_be_attributed_to_a_module(db) -> None:
     course = _make_course()
     module = Module(
         id="m1", course_id="c1", position=0, title="Module 1", description="d",
         estimated_timeline="1 week", status="in_progress", learning_outcomes=[],
     )
-    message = ConversationMessage(
+    course_scoped = ConversationMessage(course_id="c1", role="user", kind="interview_answer", content="hi")
+    module_scoped = ConversationMessage(
         course_id="c1", module_id="m1", role="assistant", kind="module_learning_digest",
         content="Covered SIMT execution and warp divergence.",
     )
-    db.session.add_all([course, module, message])
+    db.session.add_all([course, module, course_scoped, module_scoped])
     db.session.commit()
 
-    fetched = db.session.get(ConversationMessage, message.id)
-    assert fetched.module_id == "m1"
-
-
-def test_conversation_message_module_id_defaults_to_none(db) -> None:
-    course = _make_course()
-    message = ConversationMessage(course_id="c1", role="user", kind="interview_answer", content="hi")
-    db.session.add_all([course, message])
-    db.session.commit()
-
-    assert db.session.get(ConversationMessage, message.id).module_id is None
+    assert db.session.get(ConversationMessage, course_scoped.id).module_id is None
+    assert db.session.get(ConversationMessage, module_scoped.id).module_id == "m1"
 
 
 def test_deleting_course_cascades_to_conversation_messages(db) -> None:

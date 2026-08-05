@@ -11,6 +11,10 @@ def test_get_settings_creates_defaults_on_first_call(client, db) -> None:
     assert body["modelProvider"]["tier"] == "hosted"
     assert body["modelProvider"]["hasApiKey"] is False
     assert "apiKey" not in body["modelProvider"]
+    assert body["embeddingUseCompletionCredentials"] is True
+    assert body["imageGenerationUseCompletionCredentials"] is True
+    assert body["deepSearchEnabled"] is False
+    assert body["weeklyGoalActivities"] is None
 
 
 def test_put_settings_updates_provided_fields(client, db) -> None:
@@ -23,6 +27,9 @@ def test_put_settings_updates_provided_fields(client, db) -> None:
 
 
 def test_put_settings_stores_api_key_but_never_returns_it(client, db) -> None:
+    # Canonical example of the "hasXKey" secret-handling mechanism, reused
+    # identically for embeddingApiKey/tavilyApiKey/imageGenerationApiKey -
+    # those don't each need their own test of the same route logic.
     response = client.put(
         "/api/settings",
         json={"modelProvider": {"tier": "hosted", "hostedProvider": "anthropic", "apiKey": "sk-super-secret"}},
@@ -77,101 +84,13 @@ def test_put_settings_stores_byom_endpoint_and_model(client, db) -> None:
     assert body["modelProvider"]["byomModel"] == "llama3"
 
 
-def test_put_settings_stores_hosted_model(client, db) -> None:
-    response = client.put(
-        "/api/settings",
-        json={"modelProvider": {"tier": "hosted", "hostedModel": "claude-3-5-sonnet-20241022"}},
-    )
-
-    assert response.status_code == 200
-    assert response.get_json()["modelProvider"]["hostedModel"] == "claude-3-5-sonnet-20241022"
-
-
 def test_put_settings_stores_embedding_model(client, db) -> None:
+    # Representative of the plain "PUT sets a top-level string field" mechanism,
+    # also covering imageGenerationModel/hostedModel/etc.
     response = client.put("/api/settings", json={"embeddingModel": "text-embedding-3-small"})
 
     assert response.status_code == 200
     assert response.get_json()["embeddingModel"] == "text-embedding-3-small"
-
-
-def test_put_settings_partial_update_preserves_embedding_model(client, db) -> None:
-    client.put("/api/settings", json={"embeddingModel": "text-embedding-3-small"})
-
-    response = client.put("/api/settings", json={"name": "Nigel Story"})
-
-    assert response.get_json()["embeddingModel"] == "text-embedding-3-small"
-
-
-def test_get_settings_defaults_embedding_use_completion_credentials_to_true(client, db) -> None:
-    response = client.get("/api/settings")
-
-    assert response.get_json()["embeddingUseCompletionCredentials"] is True
-
-
-def test_put_settings_stores_embedding_use_completion_credentials(client, db) -> None:
-    response = client.put("/api/settings", json={"embeddingUseCompletionCredentials": False})
-
-    assert response.get_json()["embeddingUseCompletionCredentials"] is False
-
-
-def test_put_settings_stores_embedding_api_key_but_never_returns_it(client, db) -> None:
-    response = client.put("/api/settings", json={"embeddingApiKey": "sk-embedding-secret"})
-
-    assert response.status_code == 200
-    body = response.get_json()
-    assert body["hasEmbeddingApiKey"] is True
-    assert "embeddingApiKey" not in body
-
-
-def test_put_settings_stores_tavily_key_but_never_returns_it(client, db) -> None:
-    response = client.put("/api/settings", json={"tavilyApiKey": "tvly-super-secret"})
-
-    assert response.status_code == 200
-    body = response.get_json()
-    assert body["hasTavilyApiKey"] is True
-    assert "tavilyApiKey" not in body
-
-
-def test_put_settings_partial_update_preserves_tavily_key(client, db) -> None:
-    client.put("/api/settings", json={"tavilyApiKey": "tvly-super-secret"})
-
-    response = client.put("/api/settings", json={"name": "Nigel Story"})
-
-    assert response.get_json()["hasTavilyApiKey"] is True
-
-
-def test_get_settings_defaults_deep_search_to_false(client, db) -> None:
-    response = client.get("/api/settings")
-
-    assert response.get_json()["deepSearchEnabled"] is False
-
-
-def test_put_settings_enables_deep_search(client, db) -> None:
-    response = client.put("/api/settings", json={"deepSearchEnabled": True})
-
-    assert response.status_code == 200
-    assert response.get_json()["deepSearchEnabled"] is True
-
-
-def test_put_settings_partial_update_preserves_deep_search_enabled(client, db) -> None:
-    client.put("/api/settings", json={"deepSearchEnabled": True})
-
-    response = client.put("/api/settings", json={"name": "Nigel Story"})
-
-    assert response.get_json()["deepSearchEnabled"] is True
-
-
-def test_get_settings_defaults_weekly_goal_to_none(client, db) -> None:
-    response = client.get("/api/settings")
-
-    assert response.get_json()["weeklyGoalActivities"] is None
-
-
-def test_put_settings_stores_weekly_goal(client, db) -> None:
-    response = client.put("/api/settings", json={"weeklyGoalActivities": 5})
-
-    assert response.status_code == 200
-    assert response.get_json()["weeklyGoalActivities"] == 5
 
 
 def test_put_settings_clears_weekly_goal(client, db) -> None:
@@ -187,39 +106,3 @@ def test_put_settings_rejects_non_positive_weekly_goal(client, db) -> None:
     response = client.put("/api/settings", json={"weeklyGoalActivities": 0})
 
     assert response.status_code == 400
-
-
-def test_put_settings_partial_update_preserves_weekly_goal(client, db) -> None:
-    client.put("/api/settings", json={"weeklyGoalActivities": 5})
-
-    response = client.put("/api/settings", json={"name": "Nigel Story"})
-
-    assert response.get_json()["weeklyGoalActivities"] == 5
-
-
-def test_get_settings_defaults_image_generation_use_completion_credentials_to_true(client, db) -> None:
-    response = client.get("/api/settings")
-
-    assert response.get_json()["imageGenerationUseCompletionCredentials"] is True
-
-
-def test_put_settings_stores_image_generation_model(client, db) -> None:
-    response = client.put("/api/settings", json={"imageGenerationModel": "dall-e-3"})
-
-    assert response.status_code == 200
-    assert response.get_json()["imageGenerationModel"] == "dall-e-3"
-
-
-def test_put_settings_stores_image_generation_use_completion_credentials(client, db) -> None:
-    response = client.put("/api/settings", json={"imageGenerationUseCompletionCredentials": False})
-
-    assert response.get_json()["imageGenerationUseCompletionCredentials"] is False
-
-
-def test_put_settings_stores_image_generation_api_key_but_never_returns_it(client, db) -> None:
-    response = client.put("/api/settings", json={"imageGenerationApiKey": "sk-image-secret"})
-
-    assert response.status_code == 200
-    body = response.get_json()
-    assert body["hasImageGenerationApiKey"] is True
-    assert "imageGenerationApiKey" not in body

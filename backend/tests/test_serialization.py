@@ -169,34 +169,17 @@ def test_user_settings_to_dict_includes_hosted_model() -> None:
     assert result["modelProvider"]["hostedModel"] == "claude-3-5-sonnet-20241022"
 
 
-def test_user_settings_to_dict_includes_embedding_model() -> None:
+def test_user_settings_to_dict_embedding_model_defaults_to_none_then_reflects_it_when_set() -> None:
+    assert UserSettings(id=1).to_dict()["embeddingModel"] is None
+
     settings = UserSettings(id=1, embedding_model="text-embedding-3-small")
-
-    result = settings.to_dict()
-
-    assert result["embeddingModel"] == "text-embedding-3-small"
-
-
-def test_user_settings_to_dict_embedding_model_defaults_to_none() -> None:
-    settings = UserSettings(id=1)
-
-    result = settings.to_dict()
-
-    assert result["embeddingModel"] is None
+    assert settings.to_dict()["embeddingModel"] == "text-embedding-3-small"
 
 
 def test_user_settings_to_dict_never_echoes_the_raw_tavily_key() -> None:
+    assert UserSettings(id=1).to_dict()["hasTavilyApiKey"] is False
+
     settings = UserSettings(id=1, tavily_api_key="tvly-super-secret")
-
     result = settings.to_dict()
-
     assert result["hasTavilyApiKey"] is True
     assert "tavilyApiKey" not in result
-
-
-def test_user_settings_to_dict_has_tavily_api_key_defaults_to_false() -> None:
-    settings = UserSettings(id=1)
-
-    result = settings.to_dict()
-
-    assert result["hasTavilyApiKey"] is False

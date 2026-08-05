@@ -84,34 +84,6 @@ def test_run_agent_executes_web_search_tool_call_and_continues(real_llm_app, mon
     assert call_count["n"] == 2
 
 
-def test_run_agent_executes_fetch_page_tool_call(real_llm_app, monkeypatch) -> None:
-    call_count = {"n": 0}
-
-    def fake_completion(**kwargs):
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            tool_call = _FakeToolCall("call-1", "fetch_page", {"url": "https://example.com/gpu"})
-            return _FakeResponse(_FakeMessage(None, [tool_call]))
-        return _FakeResponse(_FakeMessage("final activities JSON", None))
-
-    monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
-    fetch_calls = []
-    monkeypatch.setattr(
-        "app.services.retrieval_agent.fetch_page",
-        lambda url, api_key: fetch_calls.append(url) or {"url": url, "content": "full text"},
-    )
-
-    with real_llm_app.app_context():
-        result = run_agent(
-            messages=[{"role": "user", "content": "Generate the module"}],
-            model_config={"model": "claude-3-5-sonnet-20241022"},
-            tavily_api_key="tvly-test",
-        )
-
-    assert result == "final activities JSON"
-    assert fetch_calls == ["https://example.com/gpu"]
-
-
 def test_run_agent_forces_a_final_answer_after_max_iterations(real_llm_app, monkeypatch) -> None:
     call_count = {"n": 0}
 

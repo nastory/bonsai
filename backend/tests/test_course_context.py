@@ -187,19 +187,7 @@ def test_render_source_materials_returns_empty_string_when_none(db) -> None:
     assert render_source_materials(course) == ""
 
 
-def test_render_source_materials_includes_filename_and_text(db) -> None:
-    course = _make_course()
-    course.source_materials = [_make_source_material("c1", "src-1", "paper.pdf", "GPU memory coalescing basics.")]
-    db.session.add(course)
-    db.session.commit()
-
-    rendered = render_source_materials(course)
-
-    assert "paper.pdf" in rendered
-    assert "GPU memory coalescing basics." in rendered
-
-
-def test_render_source_materials_concatenates_multiple_materials(db) -> None:
+def test_render_source_materials_includes_filename_and_concatenates_multiple(db) -> None:
     course = _make_course()
     course.source_materials = [
         _make_source_material("c1", "src-1", "paper1.pdf", "First document content."),
@@ -210,6 +198,7 @@ def test_render_source_materials_concatenates_multiple_materials(db) -> None:
 
     rendered = render_source_materials(course)
 
+    assert "paper1.pdf" in rendered
     assert "First document content." in rendered
     assert "Second document content." in rendered
 
