@@ -1,8 +1,15 @@
 <h1><img src="frontend/src/assets/logo.svg" width="28" height="28" alt="Bonsai logo" align="center" /> Bonsai Learning</h1>
 
-An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, and `design.md` for the current build's technical design.
+An open-source, locally-hosted, self-guided AI learning platform for self-directed learning on any subject. See `docs/bonsai_initial_idea.md` for the product background, `bonsai_prd.md` for the full product requirements, `design.md` for the current build's technical design, and `development_status.md` for what's built versus what's next.
 
-**Status:** Phases 0 and 1 are complete, and Phase 2 is mostly done. Phase 1 stood up the real core loop end to end against a live Ollama instance: LLM-driven course creation, incremental per-module lesson generation with retrieval-grounded citations, quiz feedback, mid-course direction changes, and data export/import, all schema-validated so a malformed model response fails clearly instead of corrupting data. Phase 2 builds on that with a reworked chunk-and-embed retrieval pipeline (deterministic citations for both documents and web search), opt-in web search for document-grounded courses, illustrative images in readings, a "Keep going" path from a finished course, weekly activity goals, and generated course thumbnails. Only video embedding remains for Phase 2, and Phase 3 (polish, semantic search, AI evals, community readiness) hasn't started. See `bonsai_prd.md`'s Milestones and `design.md`'s Roadmap sections for full detail.
+## Why Bonsai
+
+- **A course built for exactly what you want to learn.** Describe your goal in your own words, or attach a document, and a conversational interview shapes a real course outline around it, not a generic pre-made catalog entry that's only close enough.
+- **Grounded in real material, not just a model's memory.** Lesson content is generated through retrieval over live web search and/or your own uploaded documents, with citations attached deterministically from the sources actually retrieved, not invented by the model.
+- **Adapts as you go.** Mid-course, branch into a related topic or change direction entirely without losing what you've already learned; once a course is finished, keep going or dive deeper from there.
+- **Rich, multi-format lessons.** Readings, quizzes, essays, discussions, projects, embedded YouTube videos, and illustrative images, not just walls of generated text.
+- **Feedback, not grades.** Every exercise exists to help you learn, never to score or judge you.
+- **Runs on your own terms.** Self-hosted and open source; use a hosted LLM provider or bring your own local model (Ollama) and keep everything on your own machine.
 
 ## Screenshots
 
@@ -43,13 +50,14 @@ Recently, I've been on a bonsai kick on TikTok. The meditative patience that goe
 
 ```
 bonsai/
-├── docs/               # idea doc, mockup, feedback docs, course-creation flow design notes
-├── bonsai_prd.md       # product requirements document
-├── design.md           # design document: Phase 0, plus a build-slice-by-build-slice Phase 1 section
-├── docker-compose.yml  # runs frontend + backend together, each in its own container
-├── frontend/           # React + TypeScript + Vite + Tailwind SPA
+├── docs/                  # idea doc, mockup, feedback docs, course-creation/process-flow design notes
+├── bonsai_prd.md          # product requirements document
+├── design.md              # design document: build-slice-by-build-slice technical narrative, Phases 0-2
+├── development_status.md # snapshot of what's built vs. what's next, per phase
+├── docker-compose.yml     # runs frontend + backend together, each in its own container
+├── frontend/              # React + TypeScript + Vite + Tailwind SPA
 │   └── Dockerfile
-└── backend/            # Flask app: persistence, LiteLLM wrapper, REST routes
+└── backend/               # Flask app: persistence, LiteLLM wrapper, REST routes
     ├── Dockerfile
     ├── app/
     │   ├── models.py            # Course, Module, Activity, SourceMaterial, UserSettings, ConversationMessage
