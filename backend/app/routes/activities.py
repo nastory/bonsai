@@ -97,9 +97,21 @@ def generate_feedback(activity_id: str) -> Response:
 
     settings = UserSettings.get_or_create()
     try:
-        feedback = generate_activity_feedback(prompt_text, response_text, kind, settings.feedback_tone)
+        feedback = generate_activity_feedback(
+            prompt_text,
+            response_text,
+            kind,
+            settings.feedback_tone,
+            course_id=activity.module.course_id,
+            module_id=activity.module_id,
+        )
     except LLMOutputValidationError:
         abort(502, description="Failed to generate feedback")
+
+    # Feedback itself is never persisted (regenerated fresh each time) - this
+    # commit exists solely to save the LLMUsageLog row generate_activity_feedback()
+    # added to the session (see llm.py's complete()).
+    db.session.commit()
 
     return jsonify({"feedback": feedback})
 

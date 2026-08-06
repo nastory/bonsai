@@ -8,6 +8,9 @@ import litellm
 from flask import current_app
 from pydantic import BaseModel
 
+from app.extensions import db
+from app.models import LLMUsageLog
+
 # Ollama's own default is ~2048 tokens - too small for this app's real
 # prompts (accumulated activity history within a module, retrieved document
 # chunks, course learning history) and already confirmed live to cause
@@ -25,6 +28,12 @@ def complete(
     schema: type[BaseModel] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
+    *,
+    course_id: str | None = None,
+    module_id: str | None = None,
+    call_type: str | None = None,
+    content_type: str | None = None,
+    label: str | None = None,
 ) -> str:
     """Get a chat completion's text content, optionally constrained to match a schema.
 
@@ -47,13 +56,39 @@ def complete(
             (not passed as None) when not given, so BYOM calls that need
             no key don't send a meaningless one.
         api_base: The provider's base URL, for BYOM/local models.
+        course_id: The course this call is generating for, if any. Together
+            with call_type, opts this call into usage logging (see
+            _log_usage()) - omitted entirely, this call is simply not logged.
+        module_id: The module this call is generating for, if any. None for
+            course-level calls (interview, outline, ...).
+        call_type: Which generation step this is (e.g. "course_outline",
+            "module_activity", "activity_feedback") - required for usage
+            logging to happen at all.
+        content_type: For call_type="module_activity"/"activity_feedback"
+            rows, which kind of content (reading/quiz/essay/...), so a usage
+            report can group by it.
+        label: Free-text context for this call (e.g. an activity's planned
+            title), for drilling into one specific lesson's generation.
 
     Returns:
         The completion's text content. Returns a canned response instead
         of calling a real provider when ``LLM_TEST_MODE`` is set.
     """
     if current_app.config.get("LLM_TEST_MODE"):
-        return _mock_completion(messages)
+        content = _mock_completion(messages)
+        if call_type is not None:
+            prompt_tokens = sum(_rough_token_count(m.get("content", "")) for m in messages)
+            _log_usage(
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=_rough_token_count(content),
+                course_id=course_id,
+                module_id=module_id,
+                call_type=call_type,
+                content_type=content_type,
+                label=label,
+            )
+        return content
 
     kwargs: dict = {"model": model, "messages": messages}
     if api_key:
@@ -91,6 +126,22 @@ def complete(
             }
 
     response = litellm.completion(**kwargs)
+    # getattr, not response.usage: several tests stand in a hand-rolled fake
+    # response (only .choices[0].message.content) for litellm.completion, so
+    # a real response missing usage - or a fake one that doesn't model it at
+    # all - just means this call isn't logged, not a crash.
+    usage = getattr(response, "usage", None)
+    if call_type is not None and usage is not None:
+        _log_usage(
+            model=model,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            course_id=course_id,
+            module_id=module_id,
+            call_type=call_type,
+            content_type=content_type,
+            label=label,
+        )
     return response.choices[0].message.content
 
 
@@ -127,6 +178,68 @@ def complete_with_tools(
 
     response = litellm.completion(**kwargs)
     return response.choices[0].message
+
+
+def _rough_token_count(text: str) -> int:
+    """Approximate a token count from raw text, for LLM_TEST_MODE logging only.
+
+    Real (non-test-mode) calls always use litellm's actual reported usage -
+    this ~4-chars-per-token rule of thumb only exists so the usage-logging
+    code path is exercised deterministically under tests, without needing a
+    real tokenizer dependency.
+
+    Args:
+        text: The text to estimate a token count for.
+
+    Returns:
+        An approximate token count, at least 1.
+    """
+    return max(1, len(text) // 4)
+
+
+def _log_usage(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    course_id: str | None,
+    module_id: str | None,
+    call_type: str,
+    content_type: str | None,
+    label: str | None,
+) -> None:
+    """Record one completion call's token usage, best-effort.
+
+    Adds the row to the current session without committing - it rides along
+    with whichever commit the calling request handler already does (see
+    complete()'s docstring). A logging failure must never break real
+    generation, so any exception here is swallowed after a warning.
+
+    Args:
+        model: The exact model id passed to litellm.completion().
+        prompt_tokens: Tokens consumed by the prompt.
+        completion_tokens: Tokens consumed by the completion.
+        course_id: The course this call generated for, if any.
+        module_id: The module this call generated for, if any.
+        call_type: Which generation step this is.
+        content_type: The content type (reading/quiz/...), if relevant.
+        label: Free-text context for this call, if any.
+    """
+    try:
+        db.session.add(
+            LLMUsageLog(
+                course_id=course_id,
+                module_id=module_id,
+                call_type=call_type,
+                content_type=content_type,
+                label=label,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+            )
+        )
+    except Exception:
+        current_app.logger.warning("Failed to log LLM usage for call_type=%s", call_type, exc_info=True)
 
 
 def _mock_completion(messages: list[dict[str, str]]) -> str:

@@ -26,7 +26,14 @@ TONE_INSTRUCTIONS = {
 }
 
 
-def generate_activity_feedback(prompt_text: str, response_text: str, kind: str, tone: str) -> str:
+def generate_activity_feedback(
+    prompt_text: str,
+    response_text: str,
+    kind: str,
+    tone: str,
+    course_id: str | None = None,
+    module_id: str | None = None,
+) -> str:
     """Generate real feedback on a learner's free-text response.
 
     Args:
@@ -37,6 +44,9 @@ def generate_activity_feedback(prompt_text: str, response_text: str, kind: str, 
         kind: One of "essay", "project", "discussion", "check" - shapes the
             prompt's framing of what kind of response this is.
         tone: UserSettings.feedback_tone ("encouraging" or "straightforward").
+        course_id: The activity's course, for usage logging (see llm.py's
+            complete()). None skips logging.
+        module_id: The activity's module, for usage logging.
 
     Returns:
         A short feedback message referencing the learner's actual response.
@@ -59,7 +69,15 @@ def generate_activity_feedback(prompt_text: str, response_text: str, kind: str, 
         },
         {"role": "user", "content": _feedback_data_message(prompt_text, response_text)},
     ]
-    raw = complete(messages=messages, schema=ActivityFeedbackSchema, **resolve_model_config())
+    raw = complete(
+        messages=messages,
+        schema=ActivityFeedbackSchema,
+        course_id=course_id,
+        module_id=module_id,
+        call_type="activity_feedback",
+        content_type=kind,
+        **resolve_model_config(),
+    )
     parsed = validate_llm_json(raw, ActivityFeedbackSchema)
     return parsed.feedback
 

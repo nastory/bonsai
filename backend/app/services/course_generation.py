@@ -487,7 +487,14 @@ def _next_direction_interview_step(module: Module, questions_asked: int) -> Inte
         {"direction_interview_answer", "direction_interview_question"},
         module_id=module.id,
     )
-    raw = complete(messages=messages, schema=InterviewStepSchema, **resolve_model_config())
+    raw = complete(
+        messages=messages,
+        schema=InterviewStepSchema,
+        course_id=module.course_id,
+        module_id=module.id,
+        call_type="direction_interview_question",
+        **resolve_model_config(),
+    )
     return validate_llm_json(raw, InterviewStepSchema)
 
 
@@ -511,7 +518,14 @@ def _generate_direction_change_content(
         },
         module_id=module.id,
     )
-    raw = complete(messages=messages, schema=CourseDirectionChangeSchema, **resolve_model_config())
+    raw = complete(
+        messages=messages,
+        schema=CourseDirectionChangeSchema,
+        course_id=module.course_id,
+        module_id=module.id,
+        call_type="direction_change_outline",
+        **resolve_model_config(),
+    )
     return validate_llm_json(raw, CourseDirectionChangeSchema)
 
 
@@ -610,7 +624,9 @@ def _ingest_source_materials(
         # turn - appends to the same course-level index instead of
         # overwriting it.
         course.vector_index_path = build_or_update_index(course, chunks, embedding_config)
-        source_material.interview_summary = summarize_document_for_interview(chunks, model_config, embedding_config)
+        source_material.interview_summary = summarize_document_for_interview(
+            chunks, model_config, embedding_config, course_id=course.id
+        )
 
         # Appending to the relationship (not db.session.add() + setting
         # course_id by hand) is what keeps course.source_materials correct
@@ -664,7 +680,13 @@ def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepS
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question"}
     )
-    raw = complete(messages=messages, schema=InterviewStepSchema, **resolve_model_config())
+    raw = complete(
+        messages=messages,
+        schema=InterviewStepSchema,
+        course_id=course.id,
+        call_type="interview_question",
+        **resolve_model_config(),
+    )
     return validate_llm_json(raw, InterviewStepSchema)
 
 
@@ -709,7 +731,13 @@ def _generate_outline_content(course: Course, revision_feedback: str | None) -> 
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question", "outline_revision_request", "outline_presented"}
     )
-    raw = complete(messages=messages, schema=CourseOutlineSchema, **resolve_model_config())
+    raw = complete(
+        messages=messages,
+        schema=CourseOutlineSchema,
+        course_id=course.id,
+        call_type="course_outline",
+        **resolve_model_config(),
+    )
     return validate_llm_json(raw, CourseOutlineSchema)
 
 

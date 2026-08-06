@@ -307,7 +307,16 @@ def _generate_activities_content(
             if planned["type"] in ("quiz", "assessment")
             else GeneratedActivitySchema
         )
-        raw = complete(messages=messages, schema=decoding_schema, **model_config)
+        raw = complete(
+            messages=messages,
+            schema=decoding_schema,
+            course_id=module.course_id,
+            module_id=module.id,
+            call_type="module_activity",
+            content_type=planned["type"],
+            label=planned.get("title"),
+            **model_config,
+        )
         parsed = validate_llm_json(raw, GeneratedActivitySchema)
         if planned["type"] == "reading":
             if i in citations_by_activity:
@@ -319,7 +328,7 @@ def _generate_activities_content(
                 # text-matching for quizzes.
                 parsed = parsed.model_copy(update={"citations": citations_by_activity[i]})
             if settings.visual_aids_enabled and settings.tavily_api_key:
-                parsed = _add_visual_aids(parsed, model_config, settings.tavily_api_key)
+                parsed = _add_visual_aids(parsed, model_config, settings.tavily_api_key, module.course_id, module.id)
         generated.append(parsed)
         messages.append({"role": "assistant", "content": raw})
 
@@ -330,7 +339,13 @@ def _chunk_citation_label(chunk: Chunk) -> str:
     return f"{chunk.source}, p. {chunk.page}" if chunk.page is not None else chunk.source
 
 
-def _add_visual_aids(activity: GeneratedActivitySchema, model_config: dict, tavily_api_key: str) -> GeneratedActivitySchema:
+def _add_visual_aids(
+    activity: GeneratedActivitySchema,
+    model_config: dict,
+    tavily_api_key: str,
+    course_id: str | None = None,
+    module_id: str | None = None,
+) -> GeneratedActivitySchema:
     """Splice 0-3 real images into a finished reading activity's body, where they'd clarify a concept.
 
     Only called when UserSettings.visual_aids_enabled and a Tavily key are
@@ -345,6 +360,8 @@ def _add_visual_aids(activity: GeneratedActivitySchema, model_config: dict, tavi
         activity: The already-generated reading activity.
         model_config: Resolved completion model settings.
         tavily_api_key: The learner's Tavily API key.
+        course_id: The activity's course, for usage logging.
+        module_id: The activity's module, for usage logging.
 
     Returns:
         The activity, with 0+ images spliced into its body as
@@ -355,7 +372,7 @@ def _add_visual_aids(activity: GeneratedActivitySchema, model_config: dict, tavi
     if not activity.body:
         return activity
 
-    plan = _plan_visual_aids(activity.body, model_config)
+    plan = _plan_visual_aids(activity.body, model_config, course_id, module_id)
     body = activity.body
     for aid in plan.aids:
         if aid.anchorText not in body:
@@ -370,7 +387,9 @@ def _add_visual_aids(activity: GeneratedActivitySchema, model_config: dict, tavi
     return activity.model_copy(update={"body": body})
 
 
-def _plan_visual_aids(body: str, model_config: dict) -> VisualAidPlanSchema:
+def _plan_visual_aids(
+    body: str, model_config: dict, course_id: str | None = None, module_id: str | None = None
+) -> VisualAidPlanSchema:
     if current_app.config.get("LLM_TEST_MODE"):
         return VisualAidPlanSchema(aids=[])
 
@@ -378,7 +397,14 @@ def _plan_visual_aids(body: str, model_config: dict) -> VisualAidPlanSchema:
         {"role": "system", "content": load_prompt("lesson_visual_aids")},
         {"role": "user", "content": body},
     ]
-    raw = complete(messages=messages, schema=VisualAidPlanSchema, **model_config)
+    raw = complete(
+        messages=messages,
+        schema=VisualAidPlanSchema,
+        course_id=course_id,
+        module_id=module_id,
+        call_type="visual_aid_plan",
+        **model_config,
+    )
     return validate_llm_json(raw, VisualAidPlanSchema)
 
 
@@ -449,7 +475,14 @@ def _select_video(candidates: list[dict], module: Module, model_config: dict) ->
         {"role": "system", "content": load_prompt("module_video_selection")},
         {"role": "user", "content": _video_selection_data_message(module, candidates)},
     ]
-    raw = complete(messages=messages, schema=VideoSelectionSchema, **model_config)
+    raw = complete(
+        messages=messages,
+        schema=VideoSelectionSchema,
+        course_id=module.course_id,
+        module_id=module.id,
+        call_type="video_selection",
+        **model_config,
+    )
     return validate_llm_json(raw, VideoSelectionSchema)
 
 
@@ -526,7 +559,14 @@ def _generate_digest_content(module: Module) -> ModuleDigestSchema:
         {"role": "system", "content": load_prompt("module_digest")},
         {"role": "user", "content": _digest_data_message(module)},
     ]
-    raw = complete(messages=messages, schema=ModuleDigestSchema, **resolve_model_config())
+    raw = complete(
+        messages=messages,
+        schema=ModuleDigestSchema,
+        course_id=module.course_id,
+        module_id=module.id,
+        call_type="module_digest",
+        **resolve_model_config(),
+    )
     return validate_llm_json(raw, ModuleDigestSchema)
 
 

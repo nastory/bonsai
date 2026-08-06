@@ -43,7 +43,13 @@ def compact_course_context(course: Course) -> CourseContextSchema:
         course,
         {"interview_answer", "interview_question", "outline_revision_request", "outline_presented", "outline_approved"},
     )
-    raw = complete(messages=messages, schema=CourseContextSchema, **resolve_model_config())
+    raw = complete(
+        messages=messages,
+        schema=CourseContextSchema,
+        course_id=course.id,
+        call_type="course_context_compaction",
+        **resolve_model_config(),
+    )
     return validate_llm_json(raw, CourseContextSchema)
 
 
@@ -69,7 +75,9 @@ def render_course_context(course: Course) -> str:
     return "\n".join(lines)
 
 
-def summarize_document_for_interview(chunks: list[Chunk], model_config: dict, embedding_config: dict) -> str:
+def summarize_document_for_interview(
+    chunks: list[Chunk], model_config: dict, embedding_config: dict, course_id: str | None = None
+) -> str:
     """Condense an attached document's chunks to a short interview/outline-shaping summary.
 
     Called once per document at ingestion time (see course_generation.py's
@@ -91,6 +99,8 @@ def summarize_document_for_interview(chunks: list[Chunk], model_config: dict, em
         model_config: Resolved completion model settings (see model_selection.py).
         embedding_config: Resolved embedding model settings (see
             model_selection.py's resolve_embedding_config()).
+        course_id: The course this document was uploaded to, for usage
+            logging (see llm.py's complete()). None skips logging.
 
     Returns:
         A summary of at most 3 sentences.
@@ -106,7 +116,13 @@ def summarize_document_for_interview(chunks: list[Chunk], model_config: dict, em
         {"role": "system", "content": prompt},
         {"role": "user", "content": f"Representative excerpts from the document:\n\n{excerpt}"},
     ]
-    raw = complete(messages=messages, schema=DocumentSummarySchema, **model_config)
+    raw = complete(
+        messages=messages,
+        schema=DocumentSummarySchema,
+        course_id=course_id,
+        call_type="document_summary",
+        **model_config,
+    )
     return validate_llm_json(raw, DocumentSummarySchema).summary
 
 

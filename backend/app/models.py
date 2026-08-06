@@ -77,6 +77,7 @@ class Course(db.Model):
         order_by="ConversationMessage.id",
         cascade="all, delete-orphan",
     )
+    usage_logs = db.relationship("LLMUsageLog", cascade="all, delete-orphan")
 
     @property
     def progress_percent(self) -> int:
@@ -263,6 +264,43 @@ class ConversationMessage(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, server_default=db.func.now())
 
     course = db.relationship("Course", back_populates="conversation")
+
+
+class LLMUsageLog(db.Model):
+    """One real LLM completion call's token usage, for cost estimation.
+
+    Written by app/services/llm.py's complete() whenever a caller opts in by
+    passing call_type (see that module's docstring on why it's opt-in). No
+    cost column here on purpose: hypothetical dollar cost is computed at
+    query time (see app/services/llm_pricing.py) from these raw token
+    counts, so adding/repricing a reference model applies retroactively to
+    every already-logged row instead of needing a backfill.
+    """
+
+    __tablename__ = "llm_usage_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, server_default=db.func.now())
+    course_id = db.Column(db.String, db.ForeignKey("courses.id"), nullable=True)
+    module_id = db.Column(db.String, db.ForeignKey("modules.id"), nullable=True)
+    # Which generation step made this call (e.g. "course_outline",
+    # "module_activity", "activity_feedback") - free-form, not an enum, same
+    # precedent as Activity.activity_type/ConversationMessage.kind.
+    call_type = db.Column(db.String, nullable=False)
+    # Only set for call_type="module_activity"/"activity_feedback" rows:
+    # reading/quiz/assessment/essay/project/discussion. This is what a
+    # report groups by to answer "how much do quizzes cost vs. readings".
+    content_type = db.Column(db.String, nullable=True)
+    # Free text (e.g. the activity's planned title) for drilling into one
+    # specific lesson's generation - no real Activity FK exists yet at the
+    # point most of these calls are made (see call sites in llm.py callers).
+    label = db.Column(db.String, nullable=True)
+    # The exact model id passed to litellm.completion(), e.g.
+    # "claude-3-5-sonnet-20241022" or "ollama_chat/llama3".
+    model = db.Column(db.String, nullable=False)
+    prompt_tokens = db.Column(db.Integer, nullable=False)
+    completion_tokens = db.Column(db.Integer, nullable=False)
+    total_tokens = db.Column(db.Integer, nullable=False)
 
 
 class UserSettings(db.Model):
