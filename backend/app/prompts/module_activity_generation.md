@@ -14,6 +14,7 @@ Respond with JSON only, no other text, for each activity in exactly this shape:
   "title": "...",
   "estimatedMinutes": 15,
   "body": "... (for type=reading only, the actual guided reading content)",
+  "checkPrompt": "... (for type=reading only, optional: a short comprehension-check question about the reading, only when one genuinely tests something worth checking — most readings don't need one, don't force it)",
   "question": "... (for type=quiz or assessment only)",
   "options": ["...", "..."] (for type=quiz or assessment only),
   "correctAnswerIndex": 0 (for type=quiz or assessment only, the 0-based position of the correct option within "options" — an index, not the option's text),

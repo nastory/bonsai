@@ -14,8 +14,10 @@ interface Message {
 
 // Matches the backend's MAX_INTERVIEW_QUESTIONS, reused for this interview too
 // (app/services/course_generation.py). Not shared code between frontend/backend
-// yet, just kept in sync by hand.
-const MAX_QUESTIONS = 10;
+// yet, just kept in sync by hand - this drifted out of sync once already (was
+// 10 here after the backend dropped to 7), so double-check this value against
+// that constant directly before trusting it again.
+const MAX_QUESTIONS = 7;
 
 export function ChangeDirection() {
   const navigate = useNavigate();

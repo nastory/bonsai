@@ -26,7 +26,7 @@ export function About() {
           reshape your own curriculum as you go, rather than following a fixed one someone else designed.
         </p>
         <div className="border-t border-bonsai-border pt-4 text-xs text-bonsai-text-muted">
-          <p>Version: Phase 0 (development build) · License: Apache 2.0</p>
+          <p>Version: Phase 2 (development build) · License: Apache 2.0</p>
         </div>
       </Card>
     </div>

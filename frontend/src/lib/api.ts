@@ -49,6 +49,13 @@ export function completeActivity(activityId: string): Promise<Course> {
   return request<Course>(`/activities/${activityId}/complete`, { method: 'POST' });
 }
 
+export function generateActivityFeedback(activityId: string, response: string): Promise<{ feedback: string }> {
+  return request<{ feedback: string }>(`/activities/${activityId}/feedback`, {
+    method: 'POST',
+    body: JSON.stringify({ response }),
+  });
+}
+
 export function fetchCourse(courseId: string): Promise<Course> {
   return request<Course>(`/courses/${courseId}`);
 }

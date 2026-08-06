@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import type { Activity } from '../../types/course';
-import { useAppData } from '../../context/AppDataContext';
-import { getFeedbackMessage } from '../../lib/feedback';
+import { generateActivityFeedback } from '../../lib/api';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -63,9 +63,38 @@ function VideoBlock({ activity }: { activity: Activity }) {
   );
 }
 
-function CheckUnderstanding({ prompt, tone }: { prompt: string; tone: 'encouraging' | 'straightforward' }) {
+type FeedbackStatus = 'idle' | 'loading' | 'done' | 'error';
+
+/**
+ * Calls the real feedback endpoint (POST /api/activities/:id/feedback) for a
+ * free-text response, instead of the fixed canned copy this used to show
+ * regardless of what was actually written. The backend reads the learner's
+ * configured feedback tone itself, so nothing here needs to know or pass it.
+ */
+function useActivityFeedback(activityId: string) {
+  const [status, setStatus] = useState<FeedbackStatus>('idle');
+  const [feedback, setFeedback] = useState('');
+
+  const submit = async (response: string) => {
+    setStatus('loading');
+    try {
+      const result = await generateActivityFeedback(activityId, response);
+      setFeedback(result.feedback);
+      setStatus('done');
+    } catch (err) {
+      console.error('Failed to generate feedback:', err);
+      setFeedback("Thanks for writing that — couldn't generate feedback just now, but it's worth revisiting later.");
+      setStatus('error');
+    }
+  };
+
+  return { status, feedback, submit };
+}
+
+function CheckUnderstanding({ activityId, prompt }: { activityId: string; prompt: string }) {
   const [answer, setAnswer] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const { status, feedback, submit } = useActivityFeedback(activityId);
+  const done = status === 'done' || status === 'error';
 
   return (
     <div className="mt-5 rounded-lg border border-bonsai-green/30 bg-emerald-50 p-4">
@@ -78,17 +107,17 @@ function CheckUnderstanding({ prompt, tone }: { prompt: string; tone: 'encouragi
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           placeholder="Write your answer..."
-          disabled={submitted}
+          disabled={status === 'loading' || done}
         />
         <Button
           variant="primary"
-          disabled={!answer.trim() || submitted}
-          onClick={() => setSubmitted(true)}
+          disabled={!answer.trim() || status === 'loading' || done}
+          onClick={() => submit(answer.trim())}
         >
-          Check
+          {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Check'}
         </Button>
       </div>
-      {submitted && <p className="mt-2 text-sm text-bonsai-green">{getFeedbackMessage(tone, 'check')}</p>}
+      {done && <p className="mt-2 text-sm text-bonsai-green">{feedback}</p>}
     </div>
   );
 }
@@ -141,17 +170,10 @@ function QuizBlock({ activity }: { activity: Activity }) {
   );
 }
 
-function OpenResponseBlock({
-  activity,
-  tone,
-  kind,
-}: {
-  activity: Activity;
-  tone: 'encouraging' | 'straightforward';
-  kind: 'essay' | 'project';
-}) {
+function OpenResponseBlock({ activity, kind }: { activity: Activity; kind: 'essay' | 'project' }) {
   const [response, setResponse] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const { status, feedback, submit } = useActivityFeedback(activity.id);
+  const done = status === 'done' || status === 'error';
 
   return (
     <div>
@@ -161,34 +183,47 @@ function OpenResponseBlock({
       <textarea
         value={response}
         onChange={(e) => setResponse(e.target.value)}
-        disabled={submitted}
+        disabled={status === 'loading' || done}
         rows={5}
         placeholder={kind === 'project' ? 'Describe what you built or tried...' : 'Write your response...'}
         className="mt-3 w-full rounded-lg border border-bonsai-border bg-white px-4 py-3 text-sm text-bonsai-text placeholder:text-bonsai-text-muted focus:outline-none focus:ring-2 focus:ring-bonsai-green/40"
       />
-      <Button className="mt-3" disabled={!response.trim() || submitted} onClick={() => setSubmitted(true)}>
-        Submit
+      <Button
+        className="mt-3"
+        disabled={!response.trim() || status === 'loading' || done}
+        onClick={() => submit(response.trim())}
+      >
+        {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Submit'}
       </Button>
-      {submitted && <p className="mt-3 text-sm text-bonsai-green">{getFeedbackMessage(tone, kind)}</p>}
+      {done && <p className="mt-3 text-sm text-bonsai-green">{feedback}</p>}
     </div>
   );
 }
 
-function DiscussionBlock({ activity, tone }: { activity: Activity; tone: 'encouraging' | 'straightforward' }) {
+function DiscussionBlock({ activity }: { activity: Activity }) {
   const [reply, setReply] = useState('');
   const [sent, setSent] = useState(false);
+  const { status, feedback, submit } = useActivityFeedback(activity.id);
 
   return (
     <div className="space-y-3">
       <ChatBubble from="bonsai">{activity.prompt ?? ''}</ChatBubble>
       {sent && <ChatBubble from="user">{reply}</ChatBubble>}
-      {sent && <ChatBubble from="bonsai">{getFeedbackMessage(tone, 'discussion')}</ChatBubble>}
+      {sent && status === 'loading' && (
+        <div className="flex items-center gap-2 pl-11 text-sm text-bonsai-text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Thinking about your reply...
+        </div>
+      )}
+      {sent && (status === 'done' || status === 'error') && <ChatBubble from="bonsai">{feedback}</ChatBubble>}
       {!sent && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!reply.trim()) return;
+            const trimmed = reply.trim();
+            if (!trimmed) return;
             setSent(true);
+            submit(trimmed);
           }}
           className="flex gap-2"
         >
@@ -203,16 +238,13 @@ function DiscussionBlock({ activity, tone }: { activity: Activity; tone: 'encour
 }
 
 export function ActivityCard({ activity }: { activity: Activity }) {
-  const { user } = useAppData();
-  const tone = user.feedbackTone;
-
   return (
     <Card>
       {activity.type === 'reading' && activity.body && (
         <>
           <ReadingBody body={activity.body} />
           {activity.citations && <Citations citations={activity.citations} />}
-          {activity.checkPrompt && <CheckUnderstanding prompt={activity.checkPrompt} tone={tone} />}
+          {activity.checkPrompt && <CheckUnderstanding activityId={activity.id} prompt={activity.checkPrompt} />}
         </>
       )}
 
@@ -222,11 +254,11 @@ export function ActivityCard({ activity }: { activity: Activity }) {
         <QuizBlock activity={activity} />
       )}
 
-      {activity.type === 'essay' && <OpenResponseBlock activity={activity} tone={tone} kind="essay" />}
+      {activity.type === 'essay' && <OpenResponseBlock activity={activity} kind="essay" />}
 
-      {activity.type === 'project' && <OpenResponseBlock activity={activity} tone={tone} kind="project" />}
+      {activity.type === 'project' && <OpenResponseBlock activity={activity} kind="project" />}
 
-      {activity.type === 'discussion' && <DiscussionBlock activity={activity} tone={tone} />}
+      {activity.type === 'discussion' && <DiscussionBlock activity={activity} />}
     </Card>
   );
 }

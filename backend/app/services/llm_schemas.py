@@ -204,6 +204,10 @@ class GeneratedActivitySchema(BaseModel):
     # result (see module_retrieval.py); None when it didn't (no search
     # results for this activity, or no Tavily key configured).
     citations: list[CitationSchema] | None = None
+    # Reading-only, optional: a short comprehension-check question appended
+    # after the body. Not every reading needs one - fine to omit, same
+    # graceful-optionality as citations above.
+    checkPrompt: str | None = None
 
     @model_validator(mode="after")
     def _quiz_and_assessment_require_a_checkable_answer(self) -> "GeneratedActivitySchema":
@@ -282,6 +286,19 @@ class ModuleDigestSchema(BaseModel):
     """
 
     digest: str
+
+
+class ActivityFeedbackSchema(BaseModel):
+    """Expected shape of an activity_feedback.md response.
+
+    Generated on demand (see app/services/activity_feedback.py) whenever a
+    learner submits a free-text response to an essay/project/discussion
+    activity or a reading's comprehension check - real feedback on what they
+    actually wrote, not the fixed canned copy this replaced. Never a score:
+    feedback-only per the PRD, same stance as quiz/assessment explanations.
+    """
+
+    feedback: str
 
 
 class DocumentSummarySchema(BaseModel):

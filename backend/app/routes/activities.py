@@ -7,11 +7,13 @@ here, so progress survives a refresh.
 
 from datetime import datetime
 
-from flask import Blueprint, abort, jsonify
+from flask import Blueprint, abort, jsonify, request
 from flask.wrappers import Response
 
 from app.extensions import db
-from app.models import Activity
+from app.models import Activity, UserSettings
+from app.services.activity_feedback import generate_activity_feedback
+from app.services.llm_schemas import LLMOutputValidationError
 
 activities_bp = Blueprint("activities", __name__)
 
@@ -54,3 +56,58 @@ def complete_activity(activity_id: str) -> Response:
     db.session.commit()
 
     return jsonify(module.course.to_dict())
+
+
+@activities_bp.post("/api/activities/<activity_id>/feedback")
+def generate_feedback(activity_id: str) -> Response:
+    """Generate real feedback on a learner's free-text response to an activity.
+
+    Covers essay/project/discussion activities and a reading's optional
+    comprehension check (`checkPrompt`) - the activity's own prompt/question
+    is derived server-side from its stored content, not trusted from the
+    client, matching this codebase's general "server derives what it can"
+    convention. Quiz/assessment activities reject this: they already have
+    real per-question feedback from generation (correctAnswerIndex/explanation),
+    checked deterministically on the frontend.
+
+    Args:
+        activity_id: The activity's id.
+
+    Returns:
+        {"feedback": str}
+
+    Raises:
+        400: If activity_id doesn't take free-text feedback, or the request
+            has no non-empty "response".
+        404: If no activity matches activity_id.
+        502: If the LLM's response doesn't match ActivityFeedbackSchema.
+    """
+    activity = db.session.get(Activity, activity_id)
+    if activity is None:
+        abort(404, description=f"No activity with id '{activity_id}'")
+
+    body = request.get_json(force=True) or {}
+    response_text = (body.get("response") or "").strip()
+    if not response_text:
+        abort(400, description="response is required")
+
+    kind, prompt_text = _feedback_kind_and_prompt(activity)
+    if kind is None:
+        abort(400, description=f"Activity type '{activity.activity_type}' doesn't take free-text feedback")
+
+    settings = UserSettings.get_or_create()
+    try:
+        feedback = generate_activity_feedback(prompt_text, response_text, kind, settings.feedback_tone)
+    except LLMOutputValidationError:
+        abort(502, description="Failed to generate feedback")
+
+    return jsonify({"feedback": feedback})
+
+
+def _feedback_kind_and_prompt(activity: Activity) -> tuple[str | None, str]:
+    content = activity.to_dict()
+    if activity.activity_type in ("essay", "project", "discussion"):
+        return activity.activity_type, content.get("prompt") or ""
+    if activity.activity_type == "reading" and content.get("checkPrompt"):
+        return "check", content["checkPrompt"]
+    return None, ""
