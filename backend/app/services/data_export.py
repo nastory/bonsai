@@ -29,7 +29,7 @@ from pathlib import Path
 from flask import current_app
 
 from app.extensions import db
-from app.models import Activity, ConversationMessage, Course, Module, SourceMaterial, UserSettings
+from app.models import Activity, ConversationMessage, Course, FlashCardSet, Module, QuizSet, SourceMaterial, UserSettings
 from app.services.content_storage import delete_activity_content
 from app.services.source_material_storage import delete_source_material_text
 
@@ -37,7 +37,7 @@ DATA_FILENAME = "data.json"
 CONTENT_SUBDIRS = ["module_content", "source_material_text"]
 # Order matters for import: each model's foreign keys must already exist,
 # so parents are restored before children.
-EXPORTED_MODELS = [Course, Module, Activity, SourceMaterial, ConversationMessage]
+EXPORTED_MODELS = [Course, Module, Activity, SourceMaterial, ConversationMessage, FlashCardSet, QuizSet]
 SECRET_USER_SETTINGS_FIELDS = {"model_provider_api_key", "tavily_api_key"}
 
 

@@ -1,8 +1,11 @@
 import type {
+  AMAMessage,
   Course,
   DirectionChangeInterviewStep,
   DirectionChangeProposal,
+  FlashCardSet,
   InterviewStep,
+  QuizSet,
   UserSettings,
   UserSettingsPatch,
 } from '../types/course';
@@ -175,4 +178,22 @@ export function importData(file: File): Promise<void> {
   const formData = new FormData();
   formData.append('file', file);
   return request<void>('/data/import', { method: 'POST', body: formData });
+}
+
+export function generateFlashCards(moduleId: string): Promise<FlashCardSet> {
+  return request<FlashCardSet>(`/modules/${moduleId}/flash-cards`, { method: 'POST' });
+}
+
+export function generateQuizSet(moduleId: string): Promise<QuizSet> {
+  return request<QuizSet>(`/modules/${moduleId}/quiz-set`, { method: 'POST' });
+}
+
+export function askAMA(
+  message: string,
+  history: AMAMessage[],
+): Promise<{ reply: string; courseIds: string[]; citations: AMAMessage['citations'] }> {
+  return request(`/ama/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ message, history }),
+  });
 }

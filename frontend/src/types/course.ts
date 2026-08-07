@@ -62,6 +62,30 @@ export interface Activity {
   checkPrompt?: string;
 }
 
+export interface FlashCard {
+  question: string;
+  answer: string;
+}
+
+export interface FlashCardSet {
+  id: string;
+  moduleId: string;
+  cards: FlashCard[];
+}
+
+export interface QuizSet {
+  id: string;
+  moduleId: string;
+  questions: QuizQuestion[];
+}
+
+export interface AMAMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  /** Assistant-only: sources drawn from course material, when the reply used any. */
+  citations?: Citation[];
+}
+
 export interface Module {
   id: string;
   title: string;

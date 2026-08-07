@@ -8,12 +8,14 @@ from flask_cors import CORS
 
 from app.extensions import db, migrate
 from app.routes.activities import activities_bp
+from app.routes.ama import ama_bp
 from app.routes.course_creation import course_creation_bp
 from app.routes.courses import courses_bp
 from app.routes.data import data_bp
 from app.routes.health import health_bp
 from app.routes.modules import modules_bp
 from app.routes.settings import settings_bp
+from app.routes.study_tools import study_tools_bp
 from app.routes.usage import usage_bp
 
 
@@ -64,5 +66,7 @@ def create_app(test: bool = False, in_memory_db: bool = False) -> Flask:
     app.register_blueprint(modules_bp)
     app.register_blueprint(data_bp)
     app.register_blueprint(usage_bp)
+    app.register_blueprint(study_tools_bp)
+    app.register_blueprint(ama_bp)
 
     return app

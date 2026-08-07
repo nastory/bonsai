@@ -343,6 +343,71 @@ class GeneratedAssessmentDecodingSchema(BaseModel):
     questions: list[QuizQuestionSchema] = Field(min_length=10, max_length=15)
 
 
+class FlashCardSchema(BaseModel):
+    """One question/answer flash card, for the standalone "Flash Cards" study feature."""
+
+    question: str
+    answer: str
+
+
+class GeneratedFlashCardSetSchema(BaseModel):
+    """Both the decoding target and the parsing target for a flash-card generation call.
+
+    Unlike GeneratedQuizDecodingSchema/GeneratedAssessmentDecodingSchema,
+    this doesn't need a separate decoding-only schema: those exist because
+    GeneratedActivitySchema's fields are Optional (shared across 7 activity
+    types, so its own exported JSON schema can't mark "questions" required).
+    Nothing here has that shared-parent problem - every field is always
+    required for this one standalone call, so a single schema safely serves
+    both roles.
+    """
+
+    cards: list[FlashCardSchema] = Field(min_length=6, max_length=12)
+
+
+class GeneratedQuizSetSchema(BaseModel):
+    """Decoding + parsing target for the standalone "Quiz Me" feature - reuses QuizQuestionSchema.
+
+    Distinct count range from both the in-lesson quiz (1-3) and the
+    course-closing assessment (10-15): Quiz Me is a dedicated study
+    session, sized in between.
+    """
+
+    questions: list[QuizQuestionSchema] = Field(min_length=4, max_length=8)
+
+
+class CourseSelectionSchema(BaseModel):
+    """Ask Me Anything's course router: which of the learner's courses (if any) this question is about.
+
+    `courseIds` may select up to 3 courses whose material could plausibly
+    help answer the question - not just one, so a single wrong pick doesn't
+    sink the whole answer when a question sits near the boundary of two
+    courses. An empty list is itself a fully valid, real response for "none
+    of these fit" - no Optional/sentinel value needed (contrast
+    InterviewStepSchema's docstring on why a conditionally-required field
+    doesn't reach schema-constrained decoding the way a plain required one
+    does): the field itself is always required, only its length varies.
+    `reasoning` is a scratchpad forcing the model to weigh each candidate
+    before committing, same "think before deciding" precedent as
+    InterviewStepSchema.coverage/DiscussionTurnSchema.reflection.
+    """
+
+    reasoning: str = Field(min_length=1)
+    courseIds: list[str] = Field(max_length=3)
+
+
+class AMAAnswerSchema(BaseModel):
+    """Ask Me Anything's final answer. No citations field.
+
+    Citations are attached deterministically in code from the chunks
+    actually retrieved, never model-authored - same "code attaches what it
+    can verify" precedent as reading citations and quiz correctAnswerIndex
+    elsewhere in this app.
+    """
+
+    answer: str = Field(min_length=1)
+
+
 class ModuleDigestSchema(BaseModel):
     """Expected shape of a module_digest.md response.
 

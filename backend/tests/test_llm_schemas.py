@@ -11,10 +11,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.services.llm_schemas import (
+    AMAAnswerSchema,
     CourseOutlineSchema,
+    CourseSelectionSchema,
     GeneratedActivitySchema,
     GeneratedAssessmentDecodingSchema,
+    GeneratedFlashCardSetSchema,
     GeneratedQuizDecodingSchema,
+    GeneratedQuizSetSchema,
     InterviewStepSchema,
     LLMOutputValidationError,
     ModuleDigestSchema,
@@ -384,3 +388,88 @@ def test_validate_llm_json_raises_when_module_digest_missing_digest_field() -> N
 
     with pytest.raises(LLMOutputValidationError):
         validate_llm_json(raw, ModuleDigestSchema)
+
+
+def _flash_card(n: int = 1) -> dict:
+    return {"question": f"Q{n}", "answer": f"A{n}"}
+
+
+def test_flash_card_set_schema_accepts_six_to_twelve_cards() -> None:
+    for count in (6, 9, 12):
+        GeneratedFlashCardSetSchema(cards=[_flash_card(n) for n in range(count)])
+
+
+def test_flash_card_set_schema_rejects_fewer_than_six_cards() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedFlashCardSetSchema(cards=[_flash_card(n) for n in range(5)])
+
+
+def test_flash_card_set_schema_rejects_more_than_twelve_cards() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedFlashCardSetSchema(cards=[_flash_card(n) for n in range(13)])
+
+
+def test_validate_llm_json_accepts_well_formed_flash_card_set() -> None:
+    raw = """
+    {
+        "cards": [
+            {"question": "What is a GPU?", "answer": "A specialized parallel processor."},
+            {"question": "What is SIMT?", "answer": "Single Instruction, Multiple Threads."},
+            {"question": "Q3", "answer": "A3"}, {"question": "Q4", "answer": "A4"},
+            {"question": "Q5", "answer": "A5"}, {"question": "Q6", "answer": "A6"}
+        ]
+    }
+    """
+
+    result = validate_llm_json(raw, GeneratedFlashCardSetSchema)
+
+    assert len(result.cards) == 6
+    assert result.cards[0].question == "What is a GPU?"
+
+
+def test_quiz_set_schema_accepts_four_to_eight_questions() -> None:
+    for count in (4, 6, 8):
+        GeneratedQuizSetSchema(questions=[_question(n) for n in range(count)])
+
+
+def test_quiz_set_schema_rejects_fewer_than_four_questions() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedQuizSetSchema(questions=[_question(n) for n in range(3)])
+
+
+def test_quiz_set_schema_rejects_more_than_eight_questions() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedQuizSetSchema(questions=[_question(n) for n in range(9)])
+
+
+def test_course_selection_schema_accepts_up_to_three_course_ids() -> None:
+    for count in (0, 1, 3):
+        CourseSelectionSchema(reasoning="thinking", courseIds=[f"c{n}" for n in range(count)])
+
+
+def test_course_selection_schema_rejects_more_than_three_course_ids() -> None:
+    with pytest.raises(ValidationError):
+        CourseSelectionSchema(reasoning="thinking", courseIds=["c0", "c1", "c2", "c3"])
+
+
+def test_validate_llm_json_accepts_empty_course_selection() -> None:
+    raw = '{"reasoning": "nothing matches", "courseIds": []}'
+
+    result = validate_llm_json(raw, CourseSelectionSchema)
+
+    assert result.courseIds == []
+
+
+def test_validate_llm_json_accepts_well_formed_ama_answer() -> None:
+    raw = '{"answer": "GPUs use SIMT execution."}'
+
+    result = validate_llm_json(raw, AMAAnswerSchema)
+
+    assert result.answer == "GPUs use SIMT execution."
+
+
+def test_validate_llm_json_raises_for_blank_ama_answer() -> None:
+    raw = '{"answer": ""}'
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, AMAAnswerSchema)

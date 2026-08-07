@@ -147,9 +147,24 @@ class Module(db.Model):
         order_by="Activity.position",
         cascade="all, delete-orphan",
     )
+    # Both optional, independent of each other and of the module's
+    # activities - a module can have neither, either, or both a saved flash
+    # card set and a saved quiz set (see app/services/study_tools_generation.py).
+    # Generated once and reused forever, same "generate once, never
+    # regenerate" precedent as module activities themselves - no route
+    # exists to replace either once created.
+    flash_card_set = db.relationship(
+        "FlashCardSet", back_populates="module", uselist=False, cascade="all, delete-orphan"
+    )
+    quiz_set = db.relationship("QuizSet", back_populates="module", uselist=False, cascade="all, delete-orphan")
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to the shape frontend/src/types/course.ts's Module expects."""
+        """Serialize to the shape frontend/src/types/course.ts's Module expects.
+
+        Deliberately excludes flash_card_set/quiz_set - unlike activities,
+        study tools aren't needed on every course load (My Courses, Today);
+        they're fetched on demand via their own routes instead.
+        """
         return {
             "id": self.id,
             "title": self.title,
@@ -214,6 +229,57 @@ class Activity(db.Model):
             data["messages"] = [{"role": t.role, "content": t.content} for t in turns]
             data["discussionDone"] = any(t.kind == "discussion_wrapup" for t in turns)
         return data
+
+
+class FlashCardSet(db.Model):
+    """A saved set of question/answer flash cards generated from one module's content.
+
+    Generated once, on first request, and reused forever (see
+    app/services/study_tools_generation.py) - same "generate once" precedent
+    module activities themselves already follow. One per module at most;
+    enforced at the service layer (this codebase's existing convention -
+    no DB UniqueConstraint exists anywhere in this schema today), not a DB
+    constraint.
+    """
+
+    __tablename__ = "flash_card_sets"
+
+    id = db.Column(db.String, primary_key=True)
+    module_id = db.Column(db.String, db.ForeignKey("modules.id"), nullable=False)
+    # [{"question": str, "answer": str}, ...] - small, bounded, structured
+    # list stored directly as JSON, same precedent as Module.activity_plan/
+    # Course.context_summary, not content_storage.py's file mechanism
+    # (reserved for larger freeform generated text).
+    cards = db.Column(db.JSON, nullable=False, default=list)
+
+    module = db.relationship("Module", back_populates="flash_card_set")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to the shape frontend/src/types/course.ts's FlashCardSet expects."""
+        return {"id": self.id, "moduleId": self.module_id, "cards": self.cards}
+
+
+class QuizSet(db.Model):
+    """A saved quiz generated from one module's content, for the standalone "Quiz Me" feature.
+
+    Distinct from a quiz/assessment *activity* (module content generated as
+    part of the course itself) - this is a separate, on-demand study
+    session. Same generate-once/reuse-forever precedent as FlashCardSet.
+    """
+
+    __tablename__ = "quiz_sets"
+
+    id = db.Column(db.String, primary_key=True)
+    module_id = db.Column(db.String, db.ForeignKey("modules.id"), nullable=False)
+    # Reuses QuizQuestionSchema's exact shape:
+    # [{"question", "options", "correctAnswerIndex", "explanation"}, ...]
+    questions = db.Column(db.JSON, nullable=False, default=list)
+
+    module = db.relationship("Module", back_populates="quiz_set")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to the shape frontend/src/types/course.ts's QuizSet expects."""
+        return {"id": self.id, "moduleId": self.module_id, "questions": self.questions}
 
 
 class SourceMaterial(db.Model):
