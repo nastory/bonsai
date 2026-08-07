@@ -376,6 +376,26 @@ class GeneratedQuizSetSchema(BaseModel):
     questions: list[QuizQuestionSchema] = Field(min_length=4, max_length=8)
 
 
+class AMASearchTermsSchema(BaseModel):
+    """Ask Me Anything's first step: the learner's question rewritten as search-optimized terms.
+
+    A raw conversational question (especially a follow-up like "tell me
+    more about that") often embeds poorly against a vector index - this
+    call rewrites it into 1-3 self-contained, keyword-dense phrasings
+    before anything else in the pipeline runs, so both course
+    classification and retrieval work from something better-suited to
+    semantic search than the learner's literal wording. Multiple terms
+    (not just one) exist for the same reason module_retrieval.py's
+    ActivitySearchPlanSchema.terms does: different phrasings/synonyms can
+    surface different relevant chunks, improving recall. No `reasoning`
+    scratchpad field - this is a straightforward rewrite task, not a
+    judgment call needing justification the way CourseSelectionSchema's
+    course pick does.
+    """
+
+    terms: list[str] = Field(min_length=1, max_length=3)
+
+
 class CourseSelectionSchema(BaseModel):
     """Ask Me Anything's course router: which of the learner's courses (if any) this question is about.
 

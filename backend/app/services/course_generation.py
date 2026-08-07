@@ -14,7 +14,7 @@ from flask import current_app
 from werkzeug.datastructures import FileStorage
 
 from app.extensions import db
-from app.models import Course, ConversationMessage, Module, SourceMaterial, UserSettings
+from app.models import Course, ConversationMessage, LLMUsageLog, Module, SourceMaterial, UserSettings
 from app.services.course_context import (
     assemble_learning_history,
     compact_course_context,
@@ -282,6 +282,41 @@ def delete_course(course_id: str) -> None:
         delete_thumbnail_image(course.thumbnail_image_path)
     db.session.delete(course)
     db.session.commit()
+
+
+def reset_all_data() -> None:
+    """Permanently delete every course and all learner data, and reset Settings to defaults.
+
+    A full factory reset, not a filtered one, unlike import_data() (which
+    restores courses/progress but explicitly leaves this installation's own
+    API keys untouched - see data_export.py): every course is deleted (see
+    delete_course() - cascades to its modules/activities/source materials/
+    conversation messages/flash card sets/quiz sets, plus their on-disk
+    content, vector index, and thumbnail), every LLMUsageLog row is
+    cleared, and the single UserSettings row - including API keys - is
+    replaced with a fresh default one. onboarding_completed reverts to its
+    model default (False), so the first-time onboarding modal reappears on
+    next load, the same as a genuinely fresh install.
+
+    Irreversible - no undo. The caller (the route) is responsible for
+    requiring real confirmation before calling this.
+    """
+    course_ids = [c.id for c in db.session.execute(db.select(Course)).scalars()]
+    for course_id in course_ids:
+        delete_course(course_id)
+
+    # Bulk delete, not a per-row loop: usage logs can accumulate into the
+    # thousands over normal use, and there's nothing per-row to clean up
+    # (no on-disk file, no cascade) the way a course has.
+    db.session.execute(db.delete(LLMUsageLog))
+
+    db.session.delete(UserSettings.get_or_create())
+    db.session.commit()
+    # Recreates the single row immediately (defaults only, including a
+    # fresh id=1) rather than leaving it to whatever request happens to
+    # call get_or_create() next - every other part of this app assumes
+    # that row always exists.
+    UserSettings.get_or_create()
 
 
 def start_direction_change(module_id: str, message: str) -> InterviewStep:

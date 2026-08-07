@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, Info, FileText, Shield, ScrollText, Pencil, Download, Upload } from 'lucide-react';
+import { ChevronDown, Info, FileText, Shield, ScrollText, Pencil, Download, Upload, Trash2 } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
-import { ApiError, exportData, importData } from '../../lib/api';
+import { ApiError, exportData, importData, resetAllData } from '../../lib/api';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
@@ -27,6 +27,9 @@ export function UserMenu() {
   const [exportMessage, setExportMessage] = useState('');
   const [importStep, setImportStep] = useState<DialogStep>('idle');
   const [importMessage, setImportMessage] = useState('');
+  const [resetStep, setResetStep] = useState<DialogStep>('idle');
+  const [resetMessage, setResetMessage] = useState('');
+  const [resetting, setResetting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +96,24 @@ export function UserMenu() {
       );
     } finally {
       setImportStep('notice');
+    }
+  };
+
+  // No success notice: a full page reload is the confirmation itself - it
+  // lands back on the first-time onboarding screen, since Settings
+  // (including onboardingCompleted) was wiped along with everything else.
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await resetAllData();
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to reset Bonsai:', err);
+      setResetMessage(
+        err instanceof ApiError ? err.message : 'Something went wrong resetting your data. Please try again.',
+      );
+      setResetStep('notice');
+      setResetting(false);
     }
   };
 
@@ -167,6 +188,17 @@ export function UserMenu() {
                   {label}
                 </Link>
               ))}
+              <div className="my-1 border-t border-bonsai-border" />
+              <button
+                onClick={() => {
+                  setResetStep('confirm');
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Reset Bonsai
+              </button>
             </>
           )}
         </div>
@@ -213,6 +245,20 @@ export function UserMenu() {
       )}
       {importStep === 'notice' && (
         <NoticeDialog title="Import Your Data" message={importMessage} onClose={() => setImportStep('idle')} />
+      )}
+
+      {resetStep === 'confirm' && (
+        <ConfirmDialog
+          title="Reset Bonsai"
+          description="This permanently deletes every course, all progress, and all Settings — including your username, model provider configuration, and API keys — and can't be undone. Bonsai will reload afterward as if freshly installed."
+          confirmLabel={resetting ? 'Deleting...' : 'Delete everything'}
+          confirmWord="delete"
+          onCancel={() => setResetStep('idle')}
+          onConfirm={handleReset}
+        />
+      )}
+      {resetStep === 'notice' && (
+        <NoticeDialog title="Reset Bonsai" message={resetMessage} onClose={() => setResetStep('idle')} />
       )}
     </div>
   );

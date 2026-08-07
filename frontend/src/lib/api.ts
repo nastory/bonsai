@@ -180,6 +180,14 @@ export function importData(file: File): Promise<void> {
   return request<void>('/data/import', { method: 'POST', body: formData });
 }
 
+/** Permanently deletes every course and all Settings (including API keys). The server re-checks the confirmation itself. */
+export function resetAllData(): Promise<void> {
+  return request<void>('/data/reset', {
+    method: 'POST',
+    body: JSON.stringify({ confirm: 'delete' }),
+  });
+}
+
 export function generateFlashCards(moduleId: string): Promise<FlashCardSet> {
   return request<FlashCardSet>(`/modules/${moduleId}/flash-cards`, { method: 'POST' });
 }

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from app.services.llm_schemas import (
     AMAAnswerSchema,
+    AMASearchTermsSchema,
     CourseOutlineSchema,
     CourseSelectionSchema,
     GeneratedActivitySchema,
@@ -440,6 +441,29 @@ def test_quiz_set_schema_rejects_fewer_than_four_questions() -> None:
 def test_quiz_set_schema_rejects_more_than_eight_questions() -> None:
     with pytest.raises(ValidationError):
         GeneratedQuizSetSchema(questions=[_question(n) for n in range(9)])
+
+
+def test_search_terms_schema_accepts_one_to_three_terms() -> None:
+    for count in (1, 2, 3):
+        AMASearchTermsSchema(terms=[f"term {n}" for n in range(count)])
+
+
+def test_search_terms_schema_rejects_zero_terms() -> None:
+    with pytest.raises(ValidationError):
+        AMASearchTermsSchema(terms=[])
+
+
+def test_search_terms_schema_rejects_more_than_three_terms() -> None:
+    with pytest.raises(ValidationError):
+        AMASearchTermsSchema(terms=["a", "b", "c", "d"])
+
+
+def test_validate_llm_json_accepts_well_formed_search_terms() -> None:
+    raw = '{"terms": ["gpu memory coalescing", "warp scheduling"]}'
+
+    result = validate_llm_json(raw, AMASearchTermsSchema)
+
+    assert result.terms == ["gpu memory coalescing", "warp scheduling"]
 
 
 def test_course_selection_schema_accepts_up_to_three_course_ids() -> None:

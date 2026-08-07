@@ -9,7 +9,7 @@ retrieval relevance.
 
 from app.extensions import db as _db
 from app.models import Course, UserSettings
-from app.services.ama import DECLINE_NO_COURSES, DECLINE_OFF_TOPIC, answer_ama_question
+from app.services.ama import DECLINE_NO_COURSES, DECLINE_OFF_TOPIC, _merge_term_results, answer_ama_question
 from app.services.document_chunking import Chunk
 from app.services.vector_store import build_or_update_index
 
@@ -96,6 +96,61 @@ def test_answer_ama_question_merges_chunks_from_up_to_three_selected_courses(app
     labels = [c.label for c in result.citations]
     assert any(label.startswith("GPU Programming:") for label in labels)
     assert any(label.startswith("Databases:") for label in labels)
+
+
+def test_answer_ama_question_queries_the_vector_store_with_optimized_terms_not_the_raw_message(app, db, monkeypatch) -> None:
+    with app.app_context():
+        _make_indexed_course("c1", "GPU Programming", "A GPU is a specialized parallel processor.")
+        monkeypatch.setattr("app.services.ama._optimize_search_terms", lambda *a, **k: ["gpu architecture", "parallel processor"])
+        captured = {}
+
+        def _fake_query(course, query_texts, config, top_k):
+            captured["query_texts"] = query_texts
+            return {i: [] for i in range(len(query_texts))}
+
+        monkeypatch.setattr("app.services.ama.query_vector_store", _fake_query)
+
+        answer_ama_question("tell me more about that", [])
+
+    assert captured["query_texts"] == ["gpu architecture", "parallel processor"]
+
+
+def test_answer_ama_question_classifies_using_optimized_terms(app, db, monkeypatch) -> None:
+    with app.app_context():
+        _make_indexed_course("c1", "GPU Programming", "A GPU is a specialized parallel processor.")
+        monkeypatch.setattr("app.services.ama._optimize_search_terms", lambda *a, **k: ["gpu memory coalescing"])
+        captured = {}
+
+        def _fake_select(search_terms, history, candidates):
+            captured["search_terms"] = search_terms
+            return [candidates[0].id]
+
+        monkeypatch.setattr("app.services.ama._select_courses", _fake_select)
+
+        answer_ama_question("what about that thing we discussed?", [])
+
+    assert captured["search_terms"] == ["gpu memory coalescing"]
+
+
+def test_merge_term_results_interleaves_and_dedupes_across_terms() -> None:
+    a1 = Chunk(text="a1", source="s.pdf", page=1)
+    a2 = Chunk(text="a2", source="s.pdf", page=2)
+    b1 = Chunk(text="b1", source="s.pdf", page=3)
+    shared = Chunk(text="shared", source="s.pdf", page=4)
+
+    merged = _merge_term_results([[a1, shared, a2], [b1, shared]])
+
+    # Round-robin: term 1's first pick, then term 2's first pick, before
+    # either term's second pick - and the chunk both terms surfaced only
+    # appears once.
+    assert merged == [a1, b1, shared, a2]
+
+
+def test_merge_term_results_handles_a_single_term_unchanged() -> None:
+    a1 = Chunk(text="a1", source="s.pdf", page=1)
+    a2 = Chunk(text="a2", source="s.pdf", page=2)
+
+    assert _merge_term_results([[a1, a2]]) == [a1, a2]
 
 
 def test_answer_ama_question_declines_when_no_embedding_model_and_not_test_mode(monkeypatch) -> None:
