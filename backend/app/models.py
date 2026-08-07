@@ -59,6 +59,15 @@ class Course(db.Model):
     # it - see module_generation.py's _generate_activities_content(). OR'd
     # in, not overwritten, across multiple uploads - once on, stays on.
     web_search_supplement_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    # Cumulative list of course-creation interview topics resolved so far
+    # (a subset of the fixed 5-topic checklist in course_interview.md - see
+    # CourseInterviewStepSchema), persisted and re-injected into every
+    # subsequent turn's prompt so the model never has to re-derive "what's
+    # already covered" purely from raw conversation history - the actual
+    # root cause of it re-asking topics it should already know. Reset has
+    # no meaning once the interview finishes (stage leaves 'interview'),
+    # kept around rather than cleared since nothing else reads it after.
+    interview_topics_covered = db.Column(db.JSON, nullable=False, default=list)
 
     modules = db.relationship(
         "Module",
@@ -139,6 +148,13 @@ class Module(db.Model):
     # locked, ungenerated module still have a known shape before any
     # Activity rows exist for it.
     activity_plan = db.Column(db.JSON, nullable=False, default=list)
+    # The "Change This Course" direction-change interview's own persisted
+    # understanding of what the learner wants different, re-injected into
+    # every subsequent turn's prompt - same fix, same reasoning as
+    # Course.interview_topics_covered, just freeform text here since this
+    # interview has no fixed topic checklist to enumerate against. None
+    # until a direction-change interview has actually started on this module.
+    direction_change_understanding = db.Column(db.Text, nullable=True)
 
     course = db.relationship("Course", back_populates="modules")
     activities = db.relationship(

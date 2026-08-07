@@ -11,6 +11,7 @@ def test_start_course_returns_course_id_and_first_question(client, db) -> None:
     assert body["courseId"]
     assert body["done"] is False
     assert body["question"]
+    assert body["topicsCoveredCount"] == 0
 
 
 def test_start_course_with_parent_course_id_sets_lineage(client, db) -> None:

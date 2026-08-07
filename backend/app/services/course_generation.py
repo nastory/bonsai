@@ -28,9 +28,10 @@ from app.services.image_generation import ImageGenerationError, generate_thumbna
 from app.services.llm import complete
 from app.services.llm_schemas import (
     CourseDirectionChangeSchema,
+    CourseInterviewStepSchema,
     CourseModuleSchema,
     CourseOutlineSchema,
-    InterviewStepSchema,
+    DirectionChangeInterviewStepSchema,
     PlannedActivitySchema,
     validate_llm_json,
 )
@@ -48,6 +49,14 @@ from app.services.thumbnail_storage import delete_thumbnail_image, save_thumbnai
 from app.services.vector_store import build_or_update_index, delete_vector_index
 
 MAX_INTERVIEW_QUESTIONS = 7
+# Matches CourseInterviewStepSchema.topicsCovered's Literal values exactly -
+# course_interview.md's own fixed 5-topic checklist. Kept as a plain set
+# literal here rather than derived from the schema (e.g. via typing.get_args),
+# matching this codebase's existing convention of duplicating a Literal's
+# values at each real use site (see GeneratedActivitySchema/PlannedActivitySchema's
+# own duplicated `type` Literal) rather than introducing a shared-derivation
+# mechanism that doesn't exist anywhere else in this codebase yet.
+ALL_INTERVIEW_TOPICS = {"experience", "motivation", "focus", "depth", "constraints"}
 
 
 class CourseNotFoundError(Exception):
@@ -107,6 +116,10 @@ def start_course(
         thumbnail_url="from-emerald-950 to-emerald-800",
         stage="interview",
         parent_course_id=parent_course_id,
+        # Explicit, not left to the column's default=list: that only
+        # applies at flush/insert time, but _advance_interview() below
+        # reads this attribute before this course is ever committed.
+        interview_topics_covered=[],
     )
     # Ingest before anything is added to the session: resolve_model_config()
     # (called for summarization, if there are files) can trigger its own
@@ -490,25 +503,36 @@ def _advance_direction_interview(module: Module) -> InterviewStep:
         if m.kind == "direction_interview_question" and m.module_id == module.id
     )
     result = _next_direction_interview_step(module, questions_asked)
+    # Persisted regardless of done/not-done, and re-injected into the next
+    # turn's prompt (see _next_direction_interview_step) - the model builds
+    # on its own prior read of the conversation instead of re-deriving it
+    # from raw history every time, the same fix as course creation's
+    # interview_topics_covered, just freeform since this interview has no
+    # fixed topic checklist to enumerate against.
+    module.direction_change_understanding = result.understanding
 
     if result.done:
         return InterviewStep(course=module.course, done=True, question=None)
 
     _add_message(
-        module.course_id, "assistant", "direction_interview_question", result.question or "", module_id=module.id
+        module.course_id, "assistant", "direction_interview_question", result.message, module_id=module.id
     )
-    return InterviewStep(course=module.course, done=False, question=result.question)
+    return InterviewStep(course=module.course, done=False, question=result.message)
 
 
-def _next_direction_interview_step(module: Module, questions_asked: int) -> InterviewStepSchema:
+def _next_direction_interview_step(module: Module, questions_asked: int) -> DirectionChangeInterviewStepSchema:
     if questions_asked >= MAX_INTERVIEW_QUESTIONS:
-        return InterviewStepSchema(coverage="max questions reached", done=True, question="(interview complete)")
+        return DirectionChangeInterviewStepSchema(
+            understanding=module.direction_change_understanding or "max questions reached",
+            done=True,
+            message="(interview complete)",
+        )
 
     if current_app.config.get("LLM_TEST_MODE"):
-        return InterviewStepSchema(
-            coverage="[MOCK] coverage note",
+        return DirectionChangeInterviewStepSchema(
+            understanding="[MOCK] understanding note",
             done=False,
-            question=f"[MOCK] Direction-change follow-up {questions_asked + 1}.",
+            message=f"[MOCK] Direction-change follow-up {questions_asked + 1}.",
         )
 
     system_prompt = load_prompt(
@@ -516,6 +540,7 @@ def _next_direction_interview_step(module: Module, questions_asked: int) -> Inte
         questions_asked=questions_asked,
         max_questions=MAX_INTERVIEW_QUESTIONS,
         history=assemble_learning_history(module.course, up_to_module_position=module.position),
+        understanding_so_far=module.direction_change_understanding or "(nothing established yet)",
     )
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         module.course,
@@ -524,13 +549,13 @@ def _next_direction_interview_step(module: Module, questions_asked: int) -> Inte
     )
     raw = complete(
         messages=messages,
-        schema=InterviewStepSchema,
+        schema=DirectionChangeInterviewStepSchema,
         course_id=module.course_id,
         module_id=module.id,
         call_type="direction_interview_question",
         **resolve_model_config(),
     )
-    return validate_llm_json(raw, InterviewStepSchema)
+    return validate_llm_json(raw, DirectionChangeInterviewStepSchema)
 
 
 def _generate_direction_change_content(
@@ -716,31 +741,43 @@ def _topic_from_conversation(course: Course) -> str:
 
 def _advance_interview(course: Course) -> InterviewStep:
     questions_asked = sum(1 for m in course.conversation if m.kind == "interview_question")
-    result = _next_interview_step(course, questions_asked)
-
-    if result.done:
+    # Hard-stopped here, before ever calling _next_interview_step (and so
+    # before any model call), same enforced-in-code-not-just-the-prompt
+    # precedent as before - just moved up a level since `done` is no
+    # longer part of the model's own response (see below).
+    if questions_asked >= MAX_INTERVIEW_QUESTIONS:
         return InterviewStep(course=course, done=True, question=None)
 
-    _add_message(course.id, "assistant", "interview_question", result.question or "")
-    return InterviewStep(course=course, done=False, question=result.question)
+    result = _next_interview_step(course, questions_asked)
+    # Persisted regardless of done/not-done, and re-injected into the next
+    # turn's prompt (see _next_interview_step) - the model doesn't have to
+    # re-derive "what's already covered" purely from raw conversation
+    # history each turn, which was the actual mechanism behind it
+    # re-asking topics it should already know.
+    course.interview_topics_covered = result.topicsCovered
+    done = set(result.topicsCovered) >= ALL_INTERVIEW_TOPICS
+
+    if done:
+        return InterviewStep(course=course, done=True, question=None)
+
+    _add_message(course.id, "assistant", "interview_question", result.message)
+    return InterviewStep(course=course, done=False, question=result.message)
 
 
-def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepSchema:
-    if questions_asked >= MAX_INTERVIEW_QUESTIONS:
-        return InterviewStepSchema(coverage="max questions reached", done=True, question="(interview complete)")
-
+def _next_interview_step(course: Course, questions_asked: int) -> CourseInterviewStepSchema:
     if current_app.config.get("LLM_TEST_MODE"):
+        # Never itself reports every topic covered - these tests reach
+        # "done" via _advance_interview's max-questions hard stop, same as
+        # before this rework.
         if course.source_materials:
             filenames = ", ".join(m.file_name for m in course.source_materials)
-            return InterviewStepSchema(
-                coverage="[MOCK] coverage note",
-                done=False,
-                question=f"[MOCK] Follow-up question {questions_asked + 1} about {filenames}.",
+            return CourseInterviewStepSchema(
+                topicsCovered=course.interview_topics_covered,
+                message=f"[MOCK] Follow-up question {questions_asked + 1} about {filenames}.",
             )
-        return InterviewStepSchema(
-            coverage="[MOCK] coverage note",
-            done=False,
-            question=f"[MOCK] Follow-up question {questions_asked + 1} about your goals.",
+        return CourseInterviewStepSchema(
+            topicsCovered=course.interview_topics_covered,
+            message=f"[MOCK] Follow-up question {questions_asked + 1} about your goals.",
         )
 
     system_prompt = load_prompt(
@@ -749,18 +786,31 @@ def _next_interview_step(course: Course, questions_asked: int) -> InterviewStepS
         max_questions=MAX_INTERVIEW_QUESTIONS,
         source_materials=render_source_material_summaries(course),
         parent_context=_parent_context(course),
+        topics_covered=_format_topics_covered(course.interview_topics_covered),
     )
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question"}
     )
     raw = complete(
         messages=messages,
-        schema=InterviewStepSchema,
+        schema=CourseInterviewStepSchema,
         course_id=course.id,
         call_type="interview_question",
         **resolve_model_config(),
     )
-    return validate_llm_json(raw, InterviewStepSchema)
+    return validate_llm_json(raw, CourseInterviewStepSchema)
+
+
+def _format_topics_covered(topics: list[str]) -> str:
+    """Format the already-resolved interview topics for injection into the next turn's prompt.
+
+    "" when nothing's covered yet (turn 1) - matches every other optional
+    prompt section's empty-string-means-omit convention (see
+    render_source_material_summaries()/_parent_context()).
+    """
+    if not topics:
+        return ""
+    return ", ".join(topics)
 
 
 def _parent_context(course: Course) -> str:

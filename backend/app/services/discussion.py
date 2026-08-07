@@ -5,7 +5,7 @@ conversation (target 3, hard cap 5 exchanges), not the single-shot
 submit-and-get-feedback flow every other free-response activity type uses
 (see activity_feedback.py) - so it gets its own turn-counting/generation
 service, deliberately mirroring course_generation.py's interview-flow
-pattern (_advance_interview()/InterviewStepSchema/MAX_INTERVIEW_QUESTIONS)
+pattern (_advance_interview()/CourseInterviewStepSchema/MAX_INTERVIEW_QUESTIONS)
 rather than reusing generate_activity_feedback(), which has no notion of
 "turn N of M" or a running per-activity history.
 

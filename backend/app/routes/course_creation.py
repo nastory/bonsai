@@ -24,6 +24,12 @@ def _interview_step_response(step) -> dict:
         "done": step.done,
         "question": step.question,
         "sourceMaterials": [s.to_dict() for s in step.course.source_materials],
+        # Out of 5 (see course_generation.py's ALL_INTERVIEW_TOPICS) - lets
+        # the frontend show real progress through the topic checklist
+        # instead of just counting turns taken, which no longer maps 1:1
+        # to "a topic got resolved" now that a turn might be Bonsai
+        # answering the learner's own question instead.
+        "topicsCoveredCount": len(step.course.interview_topics_covered),
     }
 
 

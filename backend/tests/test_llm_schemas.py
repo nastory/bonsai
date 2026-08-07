@@ -13,14 +13,15 @@ from pydantic import ValidationError
 from app.services.llm_schemas import (
     AMAAnswerSchema,
     AMASearchTermsSchema,
+    CourseInterviewStepSchema,
     CourseOutlineSchema,
     CourseSelectionSchema,
+    DirectionChangeInterviewStepSchema,
     GeneratedActivitySchema,
     GeneratedAssessmentDecodingSchema,
     GeneratedFlashCardSetSchema,
     GeneratedQuizDecodingSchema,
     GeneratedQuizSetSchema,
-    InterviewStepSchema,
     LLMOutputValidationError,
     ModuleDigestSchema,
     validate_llm_json,
@@ -31,55 +32,77 @@ def _question(n: int = 1) -> dict:
     return {"question": f"Q{n}", "options": ["A", "B"], "correctAnswerIndex": 0, "explanation": f"e{n}"}
 
 
-def test_validate_llm_json_accepts_well_formed_interview_step() -> None:
-    raw = '{"coverage": "experience: open", "done": false, "question": "What is your experience level?"}'
-    result = validate_llm_json(raw, InterviewStepSchema)
+def test_validate_llm_json_accepts_well_formed_course_interview_step() -> None:
+    raw = '{"topicsCovered": ["experience"], "message": "What is your experience level?"}'
+    result = validate_llm_json(raw, CourseInterviewStepSchema)
 
-    assert result.done is False
-    assert result.question == "What is your experience level?"
+    assert result.topicsCovered == ["experience"]
+    assert result.message == "What is your experience level?"
 
 
-def test_validate_llm_json_strips_markdown_code_fences() -> None:
+def test_course_interview_step_accepts_an_empty_topics_covered_list() -> None:
+    result = CourseInterviewStepSchema(topicsCovered=[], message="What would you like to learn?")
+
+    assert result.topicsCovered == []
+
+
+def test_course_interview_step_rejects_an_unknown_topic() -> None:
+    with pytest.raises(ValidationError):
+        CourseInterviewStepSchema(topicsCovered=["not-a-real-topic"], message="hi")
+
+
+def test_validate_llm_json_strips_markdown_code_fences_for_course_interview_step() -> None:
     raw = (
-        '```json\n{"coverage": "all answered", "done": true, '
-        '"question": "Got it, that is enough to build your course."}\n```'
+        '```json\n{"topicsCovered": ["experience", "motivation", "focus", "depth", "constraints"], '
+        '"message": "Got it, that is enough to build your course."}\n```'
     )
 
-    result = validate_llm_json(raw, InterviewStepSchema)
+    result = validate_llm_json(raw, CourseInterviewStepSchema)
 
-    assert result.done is True
-    assert result.question == "Got it, that is enough to build your course."
+    assert len(result.topicsCovered) == 5
+    assert result.message == "Got it, that is enough to build your course."
 
 
 def test_validate_llm_json_raises_for_invalid_json_syntax() -> None:
     with pytest.raises(LLMOutputValidationError):
-        validate_llm_json("this is not json", InterviewStepSchema)
+        validate_llm_json("this is not json", CourseInterviewStepSchema)
 
 
-def test_validate_llm_json_raises_for_missing_required_field() -> None:
+def test_validate_llm_json_raises_for_missing_required_field_on_course_interview_step() -> None:
     with pytest.raises(LLMOutputValidationError):
-        validate_llm_json('{"question": "only a question, no done field"}', InterviewStepSchema)
+        validate_llm_json('{"message": "only a message, no topicsCovered field"}', CourseInterviewStepSchema)
 
 
-def test_validate_llm_json_raises_for_null_question_when_done() -> None:
+def test_validate_llm_json_raises_for_whitespace_only_message() -> None:
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json('{"topicsCovered": [], "message": "   "}', CourseInterviewStepSchema)
+
+
+def test_validate_llm_json_accepts_well_formed_direction_change_interview_step() -> None:
+    raw = '{"understanding": "wants more hands-on practice", "done": false, "message": "What pace works for you?"}'
+    result = validate_llm_json(raw, DirectionChangeInterviewStepSchema)
+
+    assert result.done is False
+    assert result.understanding == "wants more hands-on practice"
+    assert result.message == "What pace works for you?"
+
+
+def test_validate_llm_json_raises_for_null_message_when_done() -> None:
     """The exact degenerate response reproduced live against Ollama/llama3: a structurally
-    plausible {"done": false, "question": null} (or here, done true) that used to pass
-    because "question" was Optional. It's now a required field, so this is rejected the
-    same way regardless of "done", closing the gap at the schema level rather than relying
-    solely on the model_validator below to catch it after the fact."""
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json('{"coverage": "all answered", "done": true, "question": null}', InterviewStepSchema)
-
-
-def test_validate_llm_json_raises_for_whitespace_only_question() -> None:
-    with pytest.raises(LLMOutputValidationError):
-        validate_llm_json('{"coverage": "open", "done": false, "question": "   "}', InterviewStepSchema)
-
-
-def test_validate_llm_json_raises_for_blank_coverage() -> None:
+    plausible {"done": true, "message": null} that used to pass because "question" was
+    Optional. Both required fields here reject it, closing the gap at the schema level
+    rather than relying solely on the model_validator below to catch it after the fact."""
     with pytest.raises(LLMOutputValidationError):
         validate_llm_json(
-            '{"coverage": "   ", "done": false, "question": "What is your experience level?"}', InterviewStepSchema
+            '{"understanding": "all resolved", "done": true, "message": null}', DirectionChangeInterviewStepSchema
+        )
+
+
+def test_validate_llm_json_raises_for_blank_understanding() -> None:
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(
+            '{"understanding": "   ", "done": false, "message": "What pace works for you?"}',
+            DirectionChangeInterviewStepSchema,
         )
 
 

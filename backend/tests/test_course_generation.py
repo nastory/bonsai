@@ -231,7 +231,7 @@ def test_interview_prompt_uses_document_summary_not_raw_text(real_llm_app, monke
         # ranking chunks for the summary) go through _fake_embedding instead.
         responses = [
             _FakeResponse('{"summary": "A short paper about GPU memory coalescing."}'),
-            _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+            _FakeResponse('{"topicsCovered": [], "message": "a question"}'),
         ]
         captured: dict = {}
 
@@ -258,8 +258,8 @@ def test_interview_sends_real_conversation_turns_not_flattened_text(real_llm_app
     with real_llm_app.app_context():
         responses = iter(
             [
-                _FakeResponse('{"coverage": "open", "done": false, "question": "What is your experience with GPUs?"}'),
-                _FakeResponse('{"coverage": "open", "done": false, "question": "another question"}'),
+                _FakeResponse('{"topicsCovered": [], "message": "What is your experience with GPUs?"}'),
+                _FakeResponse('{"topicsCovered": [], "message": "another question"}'),
             ]
         )
         captured: list = []
@@ -279,6 +279,67 @@ def test_interview_sends_real_conversation_turns_not_flattened_text(real_llm_app
         assert second_call_messages[1] == {"role": "user", "content": "I want to learn GPU programming"}
         assert second_call_messages[2] == {"role": "assistant", "content": "What is your experience with GPUs?"}
         assert second_call_messages[3] == {"role": "user", "content": "I'm a total beginner"}
+
+
+def test_interview_persists_topics_covered_on_the_course(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        monkeypatch.setattr(
+            "app.services.llm.litellm.completion",
+            lambda **kwargs: _FakeResponse('{"topicsCovered": ["experience", "motivation"], "message": "next question"}'),
+        )
+
+        step = start_course("I want to learn GPU programming")
+
+        course = db.session.get(Course, step.course.id)
+        assert course.interview_topics_covered == ["experience", "motivation"]
+
+
+def test_interview_injects_previously_covered_topics_into_the_next_prompt(real_llm_app, monkeypatch) -> None:
+    """The actual fix for repeat questions: the model's own prior topicsCovered output
+    is persisted and handed back verbatim, instead of being discarded and re-derived from
+    raw history each turn (the mechanism that used to cause repeats)."""
+    with real_llm_app.app_context():
+        responses = iter(
+            [
+                _FakeResponse('{"topicsCovered": ["experience"], "message": "What is your goal for learning this?"}'),
+                _FakeResponse('{"topicsCovered": ["experience", "motivation"], "message": "another question"}'),
+            ]
+        )
+        captured: list = []
+
+        def fake_completion(**kwargs):
+            captured.append(kwargs["messages"][0]["content"])
+            return next(responses)
+
+        monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+        step = start_course("I want to learn GPU programming")
+        # Nothing resolved yet on the very first turn - check the specific
+        # injected line, not just the bare word "experience" (which also
+        # appears in the prompt's own topic-list description regardless).
+        assert "even rephrased: \n" in captured[0]
+
+        submit_interview_answer(step.course.id, "renewing my curiosity")
+
+        assert "even rephrased: experience" in captured[1]
+
+
+def test_interview_marks_done_once_every_topic_is_covered(real_llm_app, monkeypatch) -> None:
+    """`done` is computed in code from topicsCovered, not trusted from a separate
+    model-authored boolean - there isn't one in CourseInterviewStepSchema at all."""
+    with real_llm_app.app_context():
+        monkeypatch.setattr(
+            "app.services.llm.litellm.completion",
+            lambda **kwargs: _FakeResponse(
+                '{"topicsCovered": ["experience", "motivation", "focus", "depth", "constraints"], '
+                '"message": "Great, I have everything I need."}'
+            ),
+        )
+
+        step = start_course("I want to learn GPU programming")
+
+        assert step.done is True
+        assert step.question is None
 
 
 def test_interview_prompt_includes_parent_context_when_branched(real_llm_app, monkeypatch) -> None:
@@ -304,7 +365,7 @@ def test_interview_prompt_includes_parent_context_when_branched(real_llm_app, mo
 
         def fake_completion(**kwargs):
             captured["prompt"] = kwargs["messages"][0]["content"]
-            return _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}')
+            return _FakeResponse('{"topicsCovered": [], "message": "a question"}')
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
@@ -319,7 +380,7 @@ def test_interview_prompt_omits_parent_context_when_not_branched(real_llm_app, m
 
         def fake_completion(**kwargs):
             captured["prompt"] = kwargs["messages"][0]["content"]
-            return _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}')
+            return _FakeResponse('{"topicsCovered": [], "message": "a question"}')
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
@@ -349,7 +410,7 @@ def test_outline_prompt_includes_parent_context_when_branched(real_llm_app, monk
 
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+            lambda **kwargs: _FakeResponse('{"topicsCovered": [], "message": "a question"}'),
         )
         step = start_course("I want to go deeper on this", parent_course_id="parent-1")
 
@@ -377,7 +438,7 @@ def test_outline_prompt_includes_source_material_summary_not_raw_text(real_llm_a
 
         responses = [
             _FakeResponse('{"summary": "A short paper about GPU memory coalescing."}'),
-            _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+            _FakeResponse('{"topicsCovered": [], "message": "a question"}'),
         ]
         monkeypatch.setattr("app.services.llm.litellm.completion", lambda **kwargs: responses.pop(0))
         monkeypatch.setattr("app.services.embedding.litellm.embedding", _fake_embedding)
@@ -408,7 +469,7 @@ def test_outline_regeneration_includes_prior_outline_and_revision_request_as_tur
 ) -> None:
     with real_llm_app.app_context():
         responses = [
-            _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+            _FakeResponse('{"topicsCovered": [], "message": "a question"}'),
             _FakeResponse(
                 '{"title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week", "modules": []}'
             ),
@@ -453,7 +514,7 @@ def test_interview_hard_stops_at_max_questions_without_calling_the_model(real_ll
     with real_llm_app.app_context():
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+            lambda **kwargs: _FakeResponse('{"topicsCovered": [], "message": "a question"}'),
         )
         step = start_course("I want to learn GPU programming")
         course_id = step.course.id

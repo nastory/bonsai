@@ -21,47 +21,73 @@ class LLMOutputValidationError(Exception):
     """Raised when an LLM response is not valid JSON or doesn't match its expected schema."""
 
 
-class InterviewStepSchema(BaseModel):
-    """Expected shape of a course_interview.md / module_direction_interview.md response.
+class CourseInterviewStepSchema(BaseModel):
+    """Expected shape of a course_interview.md response - one turn of the course-creation interview.
 
-    `coverage` comes first deliberately and is discarded by the caller: it's
-    a scratchpad the model must fill in ("what's already been asked/answered,
-    what's still missing") before it commits to `done`/`question`. Field
-    order in a Pydantic model carries through to the JSON schema's property
-    order, which schema-constrained decoding generates in order — so this
-    forces the model to write out its own state-tracking before deciding,
-    the same "think before answering" effect as chain-of-thought prompting,
-    just inside the structured response instead of free text. Added after
-    live testing showed a small local model (llama3 via Ollama) losing track
-    of topics already answered a few turns back and re-asking them in
-    different words, even with an explicit "don't repeat topics" instruction
-    and no scratchpad — plain instruction-following wasn't enough on its own.
+    Replaces the old InterviewStepSchema's free-text `coverage` scratchpad
+    (deleted - it was discarded by the caller every turn, never persisted
+    or fed back, which was the actual mechanism behind the model re-asking
+    topics it should already know: it had to re-derive "what's covered"
+    purely from raw conversation history each time, with nothing telling it
+    directly) with `topicsCovered`: an enum-validated, **cumulative** list
+    of which of the fixed 5 checklist topics (experience/motivation/focus/
+    depth/constraints - see course_interview.md) are resolved so far,
+    persisted on Course.interview_topics_covered and re-injected into every
+    subsequent turn's prompt verbatim by the caller. No `done` field here
+    deliberately - the caller derives it by checking whether every topic is
+    in `topicsCovered`, the same "server verifies what it can, doesn't
+    trust a redundant model-authored boolean" precedent as citations/
+    correctAnswerIndex/AMA's course selection, extended one step further
+    since a real enum list gives the code something concrete to check
+    against instead of a separately-fallible boolean.
 
-    `question` is always a required, non-nullable string — even when `done`
-    is true, where the caller ignores its content — deliberately, not just
-    when a follow-up question is expected. Making it Optional (as it used to
-    be, required only via a model_validator when `done` was false) left a
-    gap: schema-constrained decoding only enforces plain Pydantic-required
-    fields, not a conditional requirement enforced by a validator. Ollama/
-    llama3 exploited exactly that gap in practice, confirmed live, returning
-    `{"done": false, "question": null}` — structurally valid against the
-    Optional field, useless to the learner. Making the field itself required
-    closes the gap at the decoding level (the same fix pattern as
-    GeneratedQuizDecodingSchema/GeneratedAssessmentDecodingSchema), not just
-    at post-hoc validation.
+    `message` is the model's one full conversational turn - reacting to
+    what the learner just said, answering any question they asked back
+    instead of ignoring it, and (if topics remain) asking about exactly
+    one, or a short wrap-up line if none do. Always required and non-blank,
+    even for the wrap-up case, same "a conditionally-required field doesn't
+    reach schema-constrained decoding, a plain required one does" reasoning
+    InterviewStepSchema's own docstring already established for `question`.
     """
 
-    coverage: str = Field(min_length=1)
-    done: bool
-    question: str = Field(min_length=1)
+    topicsCovered: list[Literal["experience", "motivation", "focus", "depth", "constraints"]]
+    message: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _fields_not_blank(self) -> "InterviewStepSchema":
+    def _message_not_blank(self) -> "CourseInterviewStepSchema":
         """Reject whitespace-only text, which `min_length` alone wouldn't catch."""
-        if not self.coverage.strip():
-            raise ValueError('"coverage" must not be blank')
-        if not self.question.strip():
-            raise ValueError('"question" must not be blank')
+        if not self.message.strip():
+            raise ValueError('"message" must not be blank')
+        return self
+
+
+class DirectionChangeInterviewStepSchema(BaseModel):
+    """Expected shape of a module_direction_interview.md response - one turn of "Change This Course".
+
+    Mirrors CourseInterviewStepSchema's fix (persist-and-reinject instead
+    of discard) but keeps `done` as a model judgment call, and
+    `understanding` as freeform text rather than an enum list: unlike course
+    creation's fixed 5-topic checklist, "what does the learner want
+    different going forward" has no fixed set of named topics to enumerate
+    against, so there's nothing to deterministically check `done` against
+    the way CourseInterviewStepSchema's `topicsCovered` allows. `understanding`
+    is still persisted (Module.direction_change_understanding) and
+    re-injected every turn, same core fix as course creation, just without
+    the enum validation that only makes sense for a genuinely closed set of
+    topics.
+    """
+
+    understanding: str = Field(min_length=1)
+    done: bool
+    message: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _fields_not_blank(self) -> "DirectionChangeInterviewStepSchema":
+        """Reject whitespace-only text, which `min_length` alone wouldn't catch."""
+        if not self.understanding.strip():
+            raise ValueError('"understanding" must not be blank')
+        if not self.message.strip():
+            raise ValueError('"message" must not be blank')
         return self
 
 

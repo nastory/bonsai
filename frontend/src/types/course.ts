@@ -130,6 +130,8 @@ export interface InterviewStep {
   question: string | null;
   /** The course's full accumulated source materials, not just any attached this turn. */
   sourceMaterials: SourceMaterial[];
+  /** Out of 5 fixed interview topics - real progress through the checklist, not just turns taken. */
+  topicsCoveredCount: number;
 }
 
 /** The result of starting or answering into a mid-course "Change This Course" check-in interview. */

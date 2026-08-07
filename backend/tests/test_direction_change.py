@@ -207,6 +207,68 @@ class _FakeResponse:
         self.choices = [_FakeChoice(content)]
 
 
+def test_direction_interview_persists_understanding_on_the_module(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        _make_course_with_modules(real_llm_app)
+        monkeypatch.setattr(
+            "app.services.llm.litellm.completion",
+            lambda **kwargs: _FakeResponse(
+                '{"understanding": "wants to focus on kernel debugging specifically", "done": false, "message": "a question"}'
+            ),
+        )
+
+        start_direction_change("m0", "I want to focus more on hardware internals")
+
+        module = db.session.get(Module, "m0")
+        assert module.direction_change_understanding == "wants to focus on kernel debugging specifically"
+
+
+def test_direction_interview_injects_previous_understanding_into_the_next_prompt(real_llm_app, monkeypatch) -> None:
+    """Same fix as course creation's topicsCovered: the model's own prior understanding
+    is persisted and handed back verbatim, instead of discarded and re-derived from raw
+    history each turn."""
+    with real_llm_app.app_context():
+        _make_course_with_modules(real_llm_app)
+        responses = iter(
+            [
+                _FakeResponse('{"understanding": "wants to focus on kernel debugging specifically", "done": false, "message": "q1"}'),
+                _FakeResponse('{"understanding": "wants to focus on kernel debugging specifically, faster pace", "done": false, "message": "q2"}'),
+            ]
+        )
+        captured: list = []
+
+        def fake_completion(**kwargs):
+            captured.append(kwargs["messages"][0]["content"])
+            return next(responses)
+
+        monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+        start_direction_change("m0", "I want to focus more on hardware internals")
+        assert "wants to focus on kernel debugging specifically" not in captured[0]
+
+        submit_direction_change_answer("m0", "yes, and faster")
+
+        assert "wants to focus on kernel debugging specifically" in captured[1]
+
+
+def test_direction_interview_done_still_comes_from_the_model(real_llm_app, monkeypatch) -> None:
+    """Unlike course creation's topicsCovered, this interview has no fixed checklist to
+    derive `done` from in code - it stays a model judgment call."""
+    with real_llm_app.app_context():
+        _make_course_with_modules(real_llm_app)
+        monkeypatch.setattr(
+            "app.services.llm.litellm.completion",
+            lambda **kwargs: _FakeResponse(
+                '{"understanding": "clear now", "done": true, "message": "Got it, that is enough."}'
+            ),
+        )
+
+        step = start_direction_change("m0", "I want to focus more on hardware internals")
+
+        assert step.done is True
+        assert step.question is None
+
+
 def test_direction_interview_prompt_includes_learning_history_and_real_turns(real_llm_app, monkeypatch) -> None:
     with real_llm_app.app_context():
         _make_course_with_modules(real_llm_app)
@@ -215,7 +277,7 @@ def test_direction_interview_prompt_includes_learning_history_and_real_turns(rea
 
         def fake_completion(**kwargs):
             captured.append(kwargs["messages"])
-            return _FakeResponse('{"coverage": "open", "done": false, "question": "another question"}')
+            return _FakeResponse('{"understanding": "open", "done": false, "message": "another question"}')
 
         monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
 
@@ -237,7 +299,7 @@ def test_direction_outline_prompt_includes_learning_history(real_llm_app, monkey
 
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+            lambda **kwargs: _FakeResponse('{"understanding": "open", "done": false, "message": "a question"}'),
         )
         start_direction_change("m0", "I want to focus more on hardware internals")
 
@@ -263,7 +325,7 @@ def test_direction_outline_prompt_includes_activity_usage_summary(real_llm_app, 
 
         monkeypatch.setattr(
             "app.services.llm.litellm.completion",
-            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+            lambda **kwargs: _FakeResponse('{"understanding": "open", "done": false, "message": "a question"}'),
         )
         start_direction_change("m0", "I want to focus more on hardware internals")
 

@@ -18,19 +18,19 @@ interface CreateCourseLocationState {
   parentCourseId?: string;
 }
 
-// Matches the backend's MAX_INTERVIEW_QUESTIONS (app/services/course_generation.py).
-// Not shared code between frontend/backend yet, just kept in sync by hand -
-// this drifted out of sync once already (was 10 here after the backend
-// dropped to 7), so double-check this value against that constant directly
-// before trusting it again.
-const MAX_QUESTIONS = 7;
+// Matches the backend's ALL_INTERVIEW_TOPICS (app/services/course_generation.py) -
+// the fixed 5-topic checklist the interview tracks, not a max turn count (a
+// turn might be spent on a side conversation rather than progressing a
+// topic, so turns taken is no longer an accurate progress signal). Not
+// shared code between frontend/backend yet, just kept in sync by hand.
+const TOTAL_TOPICS = 5;
 
 export function CreateCourse() {
   const navigate = useNavigate();
   const location = useLocation();
   const parentCourseId = (location.state as CreateCourseLocationState | null)?.parentCourseId;
   const [courseId, setCourseId] = useState<string | null>(null);
-  const [questionsAnswered, setQuestionsAnswered] = useState(0);
+  const [topicsCoveredCount, setTopicsCoveredCount] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     {
       from: 'bonsai',
@@ -83,7 +83,7 @@ export function CreateCourse() {
         ? await submitInterviewAnswer(courseId, text, filesToSend, supplementWithWebSearch)
         : await startCourse(text, filesToSend, parentCourseId, supplementWithWebSearch);
       if (!courseId) setCourseId(step.courseId);
-      setQuestionsAnswered((n) => n + 1);
+      setTopicsCoveredCount(step.topicsCoveredCount);
       setAttachedFiles([]);
       setSupplementWithWebSearch(false);
 
@@ -190,12 +190,12 @@ export function CreateCourse() {
       </form>
 
       <div className="mt-4 flex justify-center gap-2">
-        {Array.from({ length: MAX_QUESTIONS }).map((_, i) => (
+        {Array.from({ length: TOTAL_TOPICS }).map((_, i) => (
           <span
             key={i}
             className={cn(
               'h-2 w-2 rounded-full',
-              i < questionsAnswered ? 'bg-bonsai-green' : 'bg-bonsai-border',
+              i < topicsCoveredCount ? 'bg-bonsai-green' : 'bg-bonsai-border',
             )}
           />
         ))}
