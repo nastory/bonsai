@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAppData } from '../../context/AppDataContext';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -18,6 +19,12 @@ const PROGRESS_STEPS: Step[] = ['name', 'model', 'tavily', 'done'];
  * ModuleCompletionModal. Each step batches its fields into one
  * updateUserSettings() call on Continue, rather than Settings.tsx's
  * per-field autosave-on-blur - there's nothing to individually confirm mid-form here.
+ * The final step also requires checking a Terms of Service/User Policy
+ * acknowledgment before "Start learning" enables - unlike the model/Tavily
+ * steps, this one isn't skippable. Its links open those pages in a new tab
+ * (AppShell.tsx exempts /terms and /policy from showing this same modal,
+ * so the linked page is actually readable instead of just showing this
+ * modal on top of itself again).
  */
 export function OnboardingModal() {
   const { user, updateUserSettings } = useAppData();
@@ -42,6 +49,8 @@ export function OnboardingModal() {
   const [embeddingApiKey, setEmbeddingApiKey] = useState('');
 
   const [tavilyKey, setTavilyKey] = useState('');
+
+  const [agreed, setAgreed] = useState(false);
 
   const handleNameContinue = () => {
     const trimmed = nameDraft.trim();
@@ -278,7 +287,28 @@ export function OnboardingModal() {
               <img src={logo} alt="Bonsai" className="h-6 w-6" />
             </span>
             <p className="mt-3 text-lg font-semibold text-bonsai-text">You're ready to start learning!</p>
-            <Button className="mt-5 w-full" onClick={handleFinish} disabled={saving}>
+
+            <label className="mt-5 flex items-start gap-2 text-left text-sm text-bonsai-text-muted">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-bonsai-border text-bonsai-green focus:ring-bonsai-green"
+              />
+              <span>
+                I've read and agree to the{' '}
+                <Link to="/terms" target="_blank" rel="noreferrer" className="text-bonsai-green hover:underline">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link to="/policy" target="_blank" rel="noreferrer" className="text-bonsai-green hover:underline">
+                  User Policy
+                </Link>
+                .
+              </span>
+            </label>
+
+            <Button className="mt-4 w-full" onClick={handleFinish} disabled={saving || !agreed}>
               Start learning
             </Button>
           </div>
