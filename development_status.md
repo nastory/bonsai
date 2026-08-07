@@ -11,7 +11,7 @@ This is a snapshot of what's built versus what's next. For the *why* behind any 
 | Phase 0 — UI Mockup | Done |
 | Phase 1 — Core Loop | Done |
 | Phase 2 — Rich Media & Continuity | Done |
-| Phase 3 — Polish | In progress |
+| Phase 3 — Polish | Done (one item on hold) |
 
 ## Phase 0: UI Mockup — done
 
@@ -41,7 +41,7 @@ Every item on this phase's list shipped, including BYOM refinement:
 - **Video embedding.** A real YouTube `<iframe>` embed as its own standalone module activity, best-effort once per module: a Tavily search (restricted to youtube.com/youtu.be, terms tailored to the module's actual content) surfaces a few candidates, a model picks the best match and writes a caption, and the video slots into whichever position in the module's activity order fits its content, not a fixed slot. See `docs/process_flows.md` for a diagram of exactly where this fits into module generation.
 - **BYOM local-model refinement.** Not a single deliverable but a running set of real reliability fixes found and fixed via live verification against local Ollama models: routing BYOM calls through Ollama's `ollama_chat/` prefix instead of a buggy one, schema-constrained decoding (plus a lesson that schema validators' conditional requirements aren't enforced by the decoder, only a field's own required-ness), an explicit context-window size, a real litellm Ollama-embeddings bug worked around, and an interview prompt redesigned around a fixed topic checklist to reduce repeat-questioning on weaker local models.
 
-## Phase 3: Polish — in progress
+## Phase 3: Polish — done (one item on hold)
 
 Per `bonsai_prd.md`'s Milestones, this phase is scoped down to two items: semantic search over the course index, and community/contribution readiness. Everything else once listed here (Settings refinements, AI evals) was explicitly dropped from scope rather than deferred — Settings refinements had already happened incidentally across earlier phases' work, and AI evals were dropped in favor of relying on human experience using the app instead of automated LLM-graded evals.
 
@@ -53,7 +53,7 @@ Per `bonsai_prd.md`'s Milestones, this phase is scoped down to two items: semant
 - **LLM cost estimation — done.** A script (`estimate_costs.py`) drives real generation against a throwaway database, measures real per-call token usage, and extrapolates to an "average course" cost estimate across several reference hosted models — see the README's cost table.
 - **Activity content definitions & cadence — done.** Closed the longest-standing open item on what each learning activity type is and how often it should appear (per the user-authored `docs/course_content_definitions.md`), which required two genuinely new pieces of functionality: quiz/assessment restructured from one question to a real multi-question list, and discussion activities reworked into a genuine multi-turn conversation (target 3, hard cap 5 exchanges) instead of a single-shot submit-and-feedback flow. Capstone also became a fully distinct activity type rather than a styling variant of "project".
 - **First-time onboarding modal — done.** A one-time popup on first load walks through setting a username, model/embedding configuration (skippable), and a Tavily key (skippable).
-- **Community/contribution readiness — not started.**
+- **Community/contribution readiness — on hold.** The one remaining Milestones line item; asked the user what it should concretely mean (contribution docs, repo/license polish, something else) and they chose to leave the roadmap as complete for now rather than scope it. Revisit if it comes up later.
 
 ## Current build health
 

@@ -1,6 +1,6 @@
-# Bonsai — Phase 0 Design Document
+# Bonsai — Design Document
 
-Scope: Phase 0 only, per the PRD's milestone breakdown — a React front-end shell running against dummy/static data, plus a minimal Flask backend skeleton to establish the monorepo shape. No real generation, retrieval, or persistence logic yet; that's Phase 1. This doc will get a companion/update when Phase 1 design starts.
+Started as a Phase-0-only scoping doc (see Section 1 below, kept as written at the time) and has grown into the project's running technical design log ever since: every phase from Phase 1 onward is a dated, append-only section further down this file, in the order it was actually built, not retroactively rewritten as earlier sections change. For a current, phase-by-phase summary instead of the full build narrative, see `development_status.md`; for product requirements, see `bonsai_prd.md`.
 
 ## 1. Overview
 Bonsai's Phase 0 build is a navigable, visually-finished mockup of the full learning experience: browsing courses, running through the course-creation interview, reviewing a generated outline, working through a lesson, hitting different exercise types, getting a module-completion check-in, and configuring settings — all backed by static TypeScript fixtures instead of a real backend. Alongside it, a bare-bones Flask app is scaffolded in `backend/` so the repo has its final two-package shape from day one, even though it does nothing yet but respond to a health check.

@@ -66,7 +66,7 @@ Recently, I've been on a bonsai kick on TikTok. The meditative patience that goe
 bonsai/
 ├── docs/                  # idea doc, mockup, feedback docs, course-creation/process-flow design notes
 ├── bonsai_prd.md          # product requirements document
-├── design.md              # design document: build-slice-by-build-slice technical narrative, Phases 0-2
+├── design.md              # design document: build-slice-by-build-slice technical narrative, Phases 0-3
 ├── development_status.md # snapshot of what's built vs. what's next, per phase
 ├── docker-compose.yml     # runs frontend + backend together, each in its own container
 ├── frontend/              # React + TypeScript + Vite + Tailwind SPA
@@ -74,7 +74,7 @@ bonsai/
 └── backend/               # Flask app: persistence, LiteLLM wrapper, REST routes
     ├── Dockerfile
     ├── app/
-    │   ├── models.py            # Course, Module, Activity, SourceMaterial, UserSettings, ConversationMessage
+    │   ├── models.py            # Course, Module, Activity, FlashCardSet, QuizSet, SourceMaterial, ConversationMessage, LLMUsageLog, UserSettings
     │   ├── prompts/              # LLM prompts as markdown files, kept out of code for clean versioning
     │   ├── services/
     │   │   ├── llm.py                     # LiteLLM wrapper: schema-constrained decoding, mocked in test mode
@@ -95,10 +95,14 @@ bonsai/
     │   │   ├── course_generation.py       # interview -> outline -> approve; deletion; full-instance reset; "Branch Off"/"Change This Course"
     │   │   ├── module_generation.py       # generates a module's activities on demand, sequentially, retrieval- or document-grounded
     │   │   ├── module_retrieval.py        # deliberate per-activity search planning + retrieval before any content is written
+    │   │   ├── activity_feedback.py       # real, on-demand feedback for a free-text activity response, in the learner's configured tone
+    │   │   ├── discussion.py              # real multi-turn discussion generation (target 3, hard cap 5 exchanges) for discussion activities
     │   │   ├── study_tools_generation.py  # standalone Flash Cards / Quiz Me generation from a module's already-generated content
     │   │   ├── ama.py                     # Ask Me Anything: search-term optimization -> course classification -> retrieval -> answer
+    │   │   ├── llm_pricing.py             # curated reference-model pricing, on top of litellm's live cost_per_token()
+    │   │   ├── usage_reporting.py         # aggregates logged LLM usage into a per-course/per-module cost report
     │   │   └── data_export.py             # full-data export/import as a portable .zip archive
-    │   └── routes/               # health, courses, settings, activities, course_creation, modules, study_tools, ama, data
+    │   └── routes/               # health, courses, settings, activities, course_creation, modules, study_tools, ama, usage, data
     ├── migrations/          # Flask-Migrate / Alembic schema migrations
     └── tests/               # pytest suite
 ```
@@ -194,6 +198,11 @@ curl -X POST http://localhost:5000/api/ama/messages -H "Content-Type: applicatio
   -d '{"message": "...", "history": []}'
 # "Ask Me Anything": routes the question to up to 3 relevant courses' vector indexes and answers
 # strictly from what's retrieved, declining anything off-topic; no persistence, resend "history" each turn
+
+curl http://localhost:5000/api/usage
+# aggregated LLM token usage and hypothetical dollar cost (under several reference models) across
+# every course, broken down by module/content type/call type; also available scoped to one course
+# at /api/courses/<course-id>/usage, and the reference-model list itself at /api/usage/reference-models
 
 curl http://localhost:5000/api/data/export -o bonsai-export.zip
 # a portable archive: every course/module/activity/source-material/settings row plus their on-disk
