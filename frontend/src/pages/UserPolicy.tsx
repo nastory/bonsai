@@ -12,11 +12,6 @@ export function UserPolicy() {
         to practice or advise in those fields.
       </p>
       <p>
-        Esoteric topics, conspiracy theories, alternative medicine, and the like, are clearly flagged when
-        they contradict scientific consensus or the official record.
-      </p>
-      <p>Bonsai stays neutral on religion and politics.</p>
-      <p>
         Bonsai carries no accreditation of any kind and makes no guarantee that its generated or synthesized
         material is correct.
       </p>
