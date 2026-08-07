@@ -13,6 +13,7 @@ from flask.wrappers import Response
 from app.extensions import db
 from app.models import Activity, UserSettings
 from app.services.activity_feedback import generate_activity_feedback
+from app.services.discussion import DiscussionNotAvailableError, generate_discussion_reply
 from app.services.llm_schemas import LLMOutputValidationError
 
 activities_bp = Blueprint("activities", __name__)
@@ -62,13 +63,15 @@ def complete_activity(activity_id: str) -> Response:
 def generate_feedback(activity_id: str) -> Response:
     """Generate real feedback on a learner's free-text response to an activity.
 
-    Covers essay/project/discussion activities and a reading's optional
+    Covers essay/project/capstone activities and a reading's optional
     comprehension check (`checkPrompt`) - the activity's own prompt/question
     is derived server-side from its stored content, not trusted from the
     client, matching this codebase's general "server derives what it can"
     convention. Quiz/assessment activities reject this: they already have
-    real per-question feedback from generation (correctAnswerIndex/explanation),
-    checked deterministically on the frontend.
+    real per-question feedback from generation (correctAnswerIndex/
+    explanation), checked deterministically on the frontend. Discussion
+    activities reject this too - they're a real multi-turn conversation
+    with their own endpoint instead (see post_discussion_message() below).
 
     Args:
         activity_id: The activity's id.
@@ -118,8 +121,46 @@ def generate_feedback(activity_id: str) -> Response:
 
 def _feedback_kind_and_prompt(activity: Activity) -> tuple[str | None, str]:
     content = activity.to_dict()
-    if activity.activity_type in ("essay", "project", "discussion"):
+    if activity.activity_type in ("essay", "project", "capstone"):
         return activity.activity_type, content.get("prompt") or ""
     if activity.activity_type == "reading" and content.get("checkPrompt"):
         return "check", content["checkPrompt"]
     return None, ""
+
+
+@activities_bp.post("/api/activities/<activity_id>/discussion-messages")
+def post_discussion_message(activity_id: str) -> Response:
+    """Submit a reply in a discussion activity's real, multi-turn conversation.
+
+    Args:
+        activity_id: The activity's id.
+
+    Returns:
+        {"done": bool, "message": str} - Bonsai's next turn (or closing
+        reply, once done).
+
+    Raises:
+        400: If the activity isn't a discussion, it's already finished, or
+            the request has no non-empty "message".
+        404: If no activity matches activity_id.
+        502: If the LLM's response doesn't match DiscussionTurnSchema.
+    """
+    activity = db.session.get(Activity, activity_id)
+    if activity is None:
+        abort(404, description=f"No activity with id '{activity_id}'")
+
+    body = request.get_json(force=True) or {}
+    message = (body.get("message") or "").strip()
+    if not message:
+        abort(400, description="message is required")
+
+    try:
+        turn = generate_discussion_reply(activity, message)
+    except DiscussionNotAvailableError as e:
+        abort(400, description=str(e))
+    except LLMOutputValidationError:
+        abort(502, description="Failed to generate a discussion reply")
+
+    db.session.commit()
+
+    return jsonify({"done": turn.done, "message": turn.message})

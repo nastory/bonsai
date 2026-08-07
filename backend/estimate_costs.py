@@ -1,7 +1,7 @@
 """Run one realistic dummy course through real generation and estimate an average course's cost.
 
 Drives the real course-creation -> outline -> module-generation -> feedback
-flow (no HTTP, no mocking - LLM_TEST_MODE stays off) against a throwaway
+-> discussion flow (no HTTP, no mocking - LLM_TEST_MODE stays off) against a throwaway
 in-memory database, measures real per-call token usage, then extrapolates
 to an assumed-size "average" course (see AVG_MODULES_PER_COURSE/
 AVG_ACTIVITIES_PER_MODULE below, overridable via CLI) and prints each
@@ -26,9 +26,10 @@ from pathlib import Path
 
 from app import create_app
 from app.extensions import db
-from app.models import Course, UserSettings
+from app.models import Activity, Course, UserSettings
 from app.services.activity_feedback import generate_activity_feedback
 from app.services.course_generation import approve_outline, generate_outline, start_course, submit_interview_answer
+from app.services.discussion import MAX_DISCUSSION_TURNS, generate_discussion_reply
 from app.services.llm_pricing import REFERENCE_MODELS, estimate_cost, rate_per_million_tokens
 from app.services.model_selection import DEFAULT_BYOM_ENDPOINT, DEFAULT_BYOM_MODEL
 from app.services.module_generation import generate_module_activities
@@ -156,9 +157,17 @@ def _feedback_prompt_text(activity) -> str:
 def _first_feedback_eligible_activity(course: Course):
     for module in course.modules:
         for activity in module.activities:
-            if activity.activity_type in ("essay", "project", "discussion") or (
+            if activity.activity_type in ("essay", "project", "capstone") or (
                 activity.activity_type == "reading" and activity.to_dict().get("checkPrompt")
             ):
+                return activity
+    return None
+
+
+def _first_discussion_activity(course: Course):
+    for module in course.modules:
+        for activity in module.activities:
+            if activity.activity_type == "discussion":
                 return activity
     return None
 
@@ -201,6 +210,17 @@ def run(args: argparse.Namespace) -> tuple[dict, str, int]:
                 module_id=activity.module_id,
             )
             db.session.commit()
+
+        discussion_activity = _first_discussion_activity(course)
+        if discussion_activity is not None:
+            done = False
+            turn = 0
+            while not done and turn < MAX_DISCUSSION_TURNS:
+                turn += 1
+                result = generate_discussion_reply(discussion_activity, f"{DUMMY_FEEDBACK_RESPONSE} (turn {turn})")
+                db.session.commit()
+                done = result.done
+                discussion_activity = db.session.get(Activity, discussion_activity.id)
 
         return summarize_usage(course_id), actual_model, module_count
 

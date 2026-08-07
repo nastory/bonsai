@@ -507,6 +507,8 @@ def _generate_direction_change_content(
     system_prompt = load_prompt(
         "module_direction_outline",
         history=assemble_learning_history(module.course, up_to_module_position=module.position),
+        activity_usage=_activity_type_usage_summary(module.course, up_to_module_position=module.position),
+        activity_type_reference=load_prompt("activity_type_reference"),
     )
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         module.course,
@@ -527,6 +529,42 @@ def _generate_direction_change_content(
         **resolve_model_config(),
     )
     return validate_llm_json(raw, CourseDirectionChangeSchema)
+
+
+def _activity_type_usage_summary(course: Course, up_to_module_position: int) -> str:
+    """Summarize which activity types already appear in a course's already-committed modules.
+
+    module_direction_outline.md only ever sees the modules being replanned,
+    via assemble_learning_history()'s prose digests - it has no visibility
+    into what activity types earlier, uncommitted-to-replan modules already
+    used, so a replanned tail could otherwise violate the once/twice-per-
+    course activity rules (docs/course_content_definitions.md) without this.
+    Counts real generated Activity rows, not planned-but-ungenerated ones,
+    since only generated modules are truly "used." Same inclusive
+    up_to_module_position convention as assemble_learning_history() ("at or
+    before this position").
+
+    Args:
+        course: The course being replanned.
+        up_to_module_position: Only modules at or before this position count
+            as already committed.
+
+    Returns:
+        A short summary line per activity type actually present, or a
+        one-line fallback when nothing's been generated yet.
+    """
+    counts: dict[str, int] = {}
+    for module in course.modules:
+        if module.position > up_to_module_position:
+            continue
+        for activity in module.activities:
+            counts[activity.activity_type] = counts.get(activity.activity_type, 0) + 1
+
+    if not counts:
+        return "No activities have been generated yet in this course."
+    return "Activity types already used earlier in this course: " + ", ".join(
+        f"{count} {activity_type}" for activity_type, count in sorted(counts.items())
+    )
 
 
 def _mock_direction_change(module: Module, revision_feedback: str | None) -> CourseDirectionChangeSchema:
@@ -727,6 +765,7 @@ def _generate_outline_content(course: Course, revision_feedback: str | None) -> 
         "course_outline",
         source_materials=render_source_material_summaries(course),
         parent_context=_parent_context(course),
+        activity_type_reference=load_prompt("activity_type_reference"),
     )
     messages = [{"role": "system", "content": system_prompt}] + conversation_turns(
         course, {"interview_answer", "interview_question", "outline_revision_request", "outline_presented"}

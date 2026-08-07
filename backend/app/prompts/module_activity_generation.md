@@ -8,18 +8,26 @@ Content policy:
 - Any activity touching esoteric topics (conspiracy theories, alternative medicine, and the like) must clearly flag where the content contradicts scientific consensus or the official record.
 - Stay neutral on religion and politics: present perspectives rather than advocating for one.
 
+For type=quiz: write 1 to 3 questions checking something specific just covered (typically what the reading(s) right before it taught).
+
+For type=assessment: this is the course's single closing knowledge check — write 10 to 15 questions synthesizing material from across the whole course (the learning history above has every prior module's digest), not just this module. Draw questions from all across the course, not clustered on whichever module happens to be freshest.
+
 Respond with JSON only, no other text, for each activity in exactly this shape:
 {
-  "type": "reading" | "quiz" | "essay" | "project" | "discussion" | "assessment",
+  "type": "reading" | "quiz" | "essay" | "project" | "discussion" | "assessment" | "capstone",
   "title": "...",
   "estimatedMinutes": 15,
-  "body": "... (for type=reading only, the actual guided reading content)",
+  "body": "... (for type=reading only, the actual guided reading content — target 1,000 to 2,000 words, scaled by the learner's stated depth preference from their learner profile above: a quick-overview preference should land toward the shorter end, a deep/thorough preference toward the longer end)",
   "checkPrompt": "... (for type=reading only, optional: a short comprehension-check question about the reading, only when one genuinely tests something worth checking — most readings don't need one, don't force it)",
-  "question": "... (for type=quiz or assessment only)",
-  "options": ["...", "..."] (for type=quiz or assessment only),
-  "correctAnswerIndex": 0 (for type=quiz or assessment only, the 0-based position of the correct option within "options" — an index, not the option's text),
-  "explanation": "..." (for type=quiz or assessment only, a short explanation of why that answer is correct, that also helps the learner understand why the others aren't),
-  "prompt": "... (for type=essay, project, or discussion only, the seed prompt/instructions)"
+  "questions": [
+    {
+      "question": "...",
+      "options": ["...", "..."],
+      "correctAnswerIndex": 0 (the 0-based position of the correct option within "options" — an index, not the option's text),
+      "explanation": "... (a short explanation of why that answer is correct, that also helps the learner understand why the others aren't)"
+    }
+  ] (for type=quiz or assessment only — see the question-count guidance above),
+  "prompt": "... (for type=essay, project, discussion, or capstone only, the seed prompt/instructions)"
 }
 
 Only include the fields relevant to each activity's type; omit the rest. I'll tell you which activity to write next, one at a time.

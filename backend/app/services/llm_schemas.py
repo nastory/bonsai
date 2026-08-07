@@ -47,7 +47,8 @@ class InterviewStepSchema(BaseModel):
     `{"done": false, "question": null}` — structurally valid against the
     Optional field, useless to the learner. Making the field itself required
     closes the gap at the decoding level (the same fix pattern as
-    GeneratedQuizActivityDecodingSchema), not just at post-hoc validation.
+    GeneratedQuizDecodingSchema/GeneratedAssessmentDecodingSchema), not just
+    at post-hoc validation.
     """
 
     coverage: str = Field(min_length=1)
@@ -64,6 +65,33 @@ class InterviewStepSchema(BaseModel):
         return self
 
 
+class DiscussionTurnSchema(BaseModel):
+    """Expected shape of a module_discussion.md response — one turn of a discussion activity.
+
+    Mirrors InterviewStepSchema's shape and reasoning exactly (see its
+    docstring): `reflection` is a scratchpad the model fills in before
+    deciding, forcing it to "think" about where the conversation stands
+    before committing to done/message; `message` is required and
+    non-blank even when done is true (the model's closing/wrap-up reply),
+    for the same reason InterviewStepSchema's `question` is never Optional
+    - a conditional requirement enforced only by a validator doesn't reach
+    schema-constrained decoding, a plain required field does.
+    """
+
+    reflection: str = Field(min_length=1)
+    done: bool
+    message: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _fields_not_blank(self) -> "DiscussionTurnSchema":
+        """Reject whitespace-only text, which `min_length` alone wouldn't catch."""
+        if not self.reflection.strip():
+            raise ValueError('"reflection" must not be blank')
+        if not self.message.strip():
+            raise ValueError('"message" must not be blank')
+        return self
+
+
 class PlannedActivitySchema(BaseModel):
     """Expected shape of one planned activity within a course_outline.md module.
 
@@ -73,7 +101,7 @@ class PlannedActivitySchema(BaseModel):
     reached.
     """
 
-    type: Literal["reading", "quiz", "essay", "project", "discussion", "assessment"]
+    type: Literal["reading", "quiz", "essay", "project", "discussion", "assessment", "capstone"]
     title: str
     plan: str
 
@@ -176,6 +204,25 @@ class CitationSchema(BaseModel):
     url: str | None = None
 
 
+class QuizQuestionSchema(BaseModel):
+    """One multiple-choice question within a quiz or assessment activity.
+
+    A quiz activity holds 1-3 of these (a focused check on something just
+    covered); an assessment holds 10-15 (the course's single closing
+    knowledge check, synthesizing across the whole course) — see
+    GeneratedQuizDecodingSchema/GeneratedAssessmentDecodingSchema below for
+    where those counts are actually steered at decode time.
+    """
+
+    question: str
+    options: list[str]
+    # Which of "options" is correct, by position rather than by repeating
+    # its text — see GeneratedQuizDecodingSchema's docstring for why an
+    # index instead of a string.
+    correctAnswerIndex: int
+    explanation: str
+
+
 class GeneratedActivitySchema(BaseModel):
     """Expected shape of one module_activity_generation.md response.
 
@@ -184,21 +231,15 @@ class GeneratedActivitySchema(BaseModel):
     call, not wrapped in a list.
     """
 
-    type: Literal["reading", "quiz", "essay", "project", "discussion", "assessment"]
+    type: Literal["reading", "quiz", "essay", "project", "discussion", "assessment", "capstone"]
     title: str
     estimatedMinutes: int
     body: str | None = None
-    question: str | None = None
-    options: list[str] | None = None
-    # Quiz/assessment-only: which of "options" is correct (by position, not
-    # by repeating its text — see GeneratedQuizActivityDecodingSchema's
-    # docstring for why an index instead of a string), and why. Required for
-    # those two types (see the validator below) so the learner can actually
-    # be told whether they got it right, not just given a generic "noted"
-    # message — feedback-only per the PRD still means real feedback, not
-    # scoring.
-    correctAnswerIndex: int | None = None
-    explanation: str | None = None
+    # Quiz/assessment-only. Required (see the validator below) so the
+    # learner can actually be told whether they got each one right, not
+    # just given a generic "noted" message — feedback-only per the PRD
+    # still means real feedback, not scoring.
+    questions: list[QuizQuestionSchema] | None = None
     prompt: str | None = None
     # Populated when this activity's content drew on a retrieved search
     # result (see module_retrieval.py); None when it didn't (no search
@@ -210,69 +251,96 @@ class GeneratedActivitySchema(BaseModel):
     checkPrompt: str | None = None
 
     @model_validator(mode="after")
-    def _quiz_and_assessment_require_a_checkable_answer(self) -> "GeneratedActivitySchema":
+    def _quiz_and_assessment_require_checkable_questions(self) -> "GeneratedActivitySchema":
         """Reject a quiz/assessment with no way to tell the learner if they got it right.
 
-        `correctAnswerIndex` must be a valid index into `options` — a
-        missing or out-of-range index means the frontend has no correct
-        option to check against, and `explanation` covers the "why," not
-        just the "what."
+        Every question's `correctAnswerIndex` must be a valid index into its
+        own `options` — a missing or out-of-range index means the frontend
+        has no correct option to check against, and `explanation` covers
+        the "why," not just the "what." Deliberately doesn't enforce an
+        exact question count here (1-3 for quiz, 10-15 for assessment) -
+        that's steered at decode time (see the two decoding schemas below),
+        not hard-validated at parse time, so a model landing on a
+        reasonable-but-off count doesn't 502 - matches this codebase's
+        existing graceful-degradation stance elsewhere (e.g.
+        VisualAidPlanSchema doesn't enforce its own "0-3" either).
         """
         if self.type in ("quiz", "assessment"):
-            if self.correctAnswerIndex is None:
-                raise ValueError('"correctAnswerIndex" is required for type=quiz/assessment')
-            if not self.options or not (0 <= self.correctAnswerIndex < len(self.options)):
-                raise ValueError('"correctAnswerIndex" must be a valid index into "options"')
-            if not (self.explanation and self.explanation.strip()):
-                raise ValueError('"explanation" is required for type=quiz/assessment')
+            if not self.questions:
+                raise ValueError('"questions" must have at least one item for type=quiz/assessment')
+            for q in self.questions:
+                if not (0 <= q.correctAnswerIndex < len(q.options)):
+                    raise ValueError('"correctAnswerIndex" must be a valid index into "options"')
+                if not (q.explanation and q.explanation.strip()):
+                    raise ValueError('"explanation" is required for every question')
         return self
 
 
-class GeneratedQuizActivityDecodingSchema(BaseModel):
-    """Decoding-only shape for a quiz/assessment generation call — NOT a parsing target.
+class GeneratedQuizDecodingSchema(BaseModel):
+    """Decoding-only shape for a quiz generation call — NOT a parsing target.
 
     llm.py's complete() uses a schema's model_json_schema() to constrain the
     model's raw decoding (Ollama's native structured output, OpenAI's
     Structured Outputs, Anthropic's forced-tool-call translation — see
-    complete()'s docstring). GeneratedActivitySchema can't be that schema for
-    a quiz/assessment call: correctAnswerIndex/explanation are Optional
-    there (they don't apply to every activity type sharing that one class),
-    so the exported JSON schema doesn't mark them "required" — confirmed
-    against real Ollama/llama3 that a model left free to omit an optional
-    field often does, especially the last one or two: explanation was
-    silently dropped in 2 of 3 trials, only caught after the fact by
-    GeneratedActivitySchema's validator turning it into a request failure
-    instead of a generation that just didn't have the gap to begin with.
+    complete()'s docstring). GeneratedActivitySchema can't be that schema
+    for a quiz call: its fields are Optional there (they don't apply to
+    every activity type sharing that one class), so the exported JSON
+    schema doesn't mark them "required" — confirmed against real Ollama/
+    llama3 that a model left free to omit an optional field often does,
+    especially the last one or two: explanation was silently dropped in 2
+    of 3 trials, only caught after the fact by GeneratedActivitySchema's
+    validator turning it into a request failure instead of a generation
+    that just didn't have the gap to begin with.
 
-    Also why this asks for an *index* into options rather than repeating the
-    correct option's text: a plain JSON Schema string field has no way to
-    express "must equal one of these other array values" (that's a
-    cross-field constraint, which JSON Schema can't encode), so even with
-    correctAnswer marked required, nothing stops the model from paraphrasing
-    or lightly rewording the option instead of copying it verbatim —
-    confirmed against real Ollama/llama3: required alone dropped the
-    explanation-missing failures to 0/6, but a text correctAnswer still
+    Also why each question asks for an *index* into options rather than
+    repeating the correct option's text: a plain JSON Schema string field
+    has no way to express "must equal one of these other array values"
+    (that's a cross-field constraint, which JSON Schema can't encode), so
+    even with correctAnswer marked required, nothing stops the model from
+    paraphrasing or lightly rewording the option instead of copying it
+    verbatim — confirmed against real Ollama/llama3: required alone dropped
+    the explanation-missing failures to 0/6, but a text correctAnswer still
     failed to exactly match any option in 3 of those 6. An index is a small
     integer already validated in-range by the schema's own type/bounds
     (see the validator on GeneratedActivitySchema), so there's no string to
     get slightly wrong.
 
+    `questions`'s min_length/max_length is a real JSON Schema keyword (not a
+    cross-field validator), so a schema-constrained decoder can plausibly
+    act on it directly — unlike correctAnswerIndex's cross-field
+    "must be in range" constraint above. Live-verify this actually steers
+    real model output rather than assuming it from the JSON Schema spec
+    alone, same "confirm live" lesson this file has already learned twice.
+
     module_generation.py's _generate_activities_content() passes this
     instead, only for schema=, only when the planned activity's type is
-    quiz/assessment — the response returned is still parsed and validated
-    against GeneratedActivitySchema as normal, since that's what needs to
-    handle every activity type's actual shape (title/estimatedMinutes/type
+    quiz — the response returned is still parsed and validated against
+    GeneratedActivitySchema as normal, since that's what needs to handle
+    every activity type's actual shape (title/estimatedMinutes/type
     duplicated here only so a real JSON schema can be exported; not meant
     to be instantiated).
     """
 
-    type: Literal["quiz", "assessment"]
+    type: Literal["quiz"]
     title: str
     estimatedMinutes: int
-    question: str
-    options: list[str]
-    correctAnswerIndex: int
-    explanation: str
+    questions: list[QuizQuestionSchema] = Field(min_length=1, max_length=3)
+
+
+class GeneratedAssessmentDecodingSchema(BaseModel):
+    """Decoding-only shape for the course's one closing assessment — NOT a parsing target.
+
+    Same reasoning as GeneratedQuizDecodingSchema (see its docstring), just
+    a different question-count range: this is the course's single closing
+    knowledge check, so it's meant to be substantially larger than a
+    regular quiz — 10 to 15 questions covering material from across the
+    whole course, not just the module it's generated in.
+    """
+
+    type: Literal["assessment"]
+    title: str
+    estimatedMinutes: int
+    questions: list[QuizQuestionSchema] = Field(min_length=10, max_length=15)
 
 
 class ModuleDigestSchema(BaseModel):

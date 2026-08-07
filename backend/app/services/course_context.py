@@ -204,7 +204,9 @@ def assemble_learning_history(course: Course, up_to_module_position: int | None 
     return "\n\n".join(p for p in parts if p)
 
 
-def conversation_turns(course: Course, kinds: set[str], module_id: str | None = None) -> list[dict[str, str]]:
+def conversation_turns(
+    course: Course, kinds: set[str], module_id: str | None = None, activity_id: str | None = None
+) -> list[dict[str, str]]:
     """Build a real chat-message list from a course's conversation, for the given message kinds.
 
     ConversationMessage.role is already exactly "user"/"assistant" (see
@@ -221,6 +223,10 @@ def conversation_turns(course: Course, kinds: set[str], module_id: str | None = 
             module (see ConversationMessage.module_id) — for a mid-course
             check-in's own turns, which are scoped to one specific module's
             completion event, not the whole course.
+        activity_id: When given, also restricts to messages tagged with this
+            activity (see ConversationMessage.activity_id) — for a
+            discussion activity's own turn-by-turn thread, scoped to just
+            that one activity.
 
     Returns:
         Messages in standard role/content shape, in conversation order.
@@ -228,7 +234,10 @@ def conversation_turns(course: Course, kinds: set[str], module_id: str | None = 
     return [
         {"role": m.role, "content": m.content}
         for m in course.conversation
-        if m.kind in kinds and m.content and (module_id is None or m.module_id == module_id)
+        if m.kind in kinds
+        and m.content
+        and (module_id is None or m.module_id == module_id)
+        and (activity_id is None or m.activity_id == activity_id)
     ]
 
 

@@ -85,8 +85,10 @@ def test_generate_module_activities_assessment_includes_correct_answer_and_expla
 
     assessment = next(a for a in result.activities if a.activity_type == "assessment")
     data = assessment.to_dict()
-    assert 0 <= data["correctAnswerIndex"] < len(data["options"])
-    assert data["explanation"]
+    assert data["questions"]
+    for question in data["questions"]:
+        assert 0 <= question["correctAnswerIndex"] < len(question["options"])
+        assert question["explanation"]
 
 
 def test_generate_module_activities_writes_content_path_for_each_activity(db) -> None:

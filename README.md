@@ -9,7 +9,20 @@ An open-source, locally-hosted, self-guided AI learning platform for self-direct
 - **Adapts as you go.** Mid-course, branch into a related topic or change direction entirely without losing what you've already learned; once a course is finished, keep going or dive deeper from there.
 - **Rich, multi-format lessons.** Readings, quizzes, essays, discussions, projects, embedded YouTube videos, and illustrative images, not just walls of generated text.
 - **Feedback, not grades.** Every exercise exists to help you learn, never to score or judge you.
-- **Runs on your own terms.** Self-hosted and open source; use a hosted LLM provider or bring your own local model (Ollama) and keep everything on your own machine.
+- **You control the cost.** Self-hosted and open source; use a hosted LLM provider or bring your own local model (Ollama) and keep everything on your own machine. Course content retrieval can fit well within Tavily's free tier as well.
+
+## Estimated cost of generating an average course (5 modules with 4 learning activities each)
+You can use Bonsai completely for free by using your own locally-hosted models, or you can connect your own paid OpenAI and Anthropic models. Either way, you're going to save money when compared to paid learning platforms.
+
+| Reference model | $/1M input | $/1M output | Estimated cost for an average course |
+|---|---|---|---|
+| Claude Opus | $5.00 | $25.00 | $0.4735 |
+| Claude Sonnet | $3.00 | $15.00 | $0.2841 |
+| Claude Haiku | $1.00 | $5.00 | $0.0947 |
+| GPT-5 | $1.25 | $10.00 | $0.1548 |
+| GPT-5 mini | $0.25 | $2.00 | $0.0310 |
+| GPT-4o | $2.50 | $10.00 | $0.2125 |
+| GPT-4o mini | $0.15 | $0.60 | $0.0127 |
 
 ## Screenshots
 

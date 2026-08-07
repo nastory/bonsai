@@ -180,14 +180,19 @@ class Activity(db.Model):
     completed_at = db.Column(db.DateTime, nullable=True)
 
     module = db.relationship("Module", back_populates="activities")
+    conversation_messages = db.relationship("ConversationMessage", cascade="all, delete-orphan")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the shape frontend/src/types/course.ts's Activity expects.
 
-        Content-heavy fields (body, citations, question, options, prompt,
+        Content-heavy fields (body, citations, questions, prompt,
         checkPrompt) are read from the file at content_path and merged in,
         once module generation has populated it; omitted entirely for
-        activities that haven't been generated yet.
+        activities that haven't been generated yet. For a discussion
+        activity, also merges its real-time turn-by-turn thread from
+        ConversationMessage (see app/services/discussion.py) - unlike every
+        other activity's content, this isn't static once generated, so it's
+        assembled fresh on every read instead of living in the content file.
         """
         data: dict[str, Any] = {
             "id": self.id,
@@ -201,6 +206,13 @@ class Activity(db.Model):
             from app.services.content_storage import load_activity_content
 
             data.update(load_activity_content(self.content_path))
+        if self.activity_type == "discussion":
+            turns = sorted(
+                (m for m in self.conversation_messages if m.kind in ("discussion_reply", "discussion_wrapup")),
+                key=lambda m: m.id,
+            )
+            data["messages"] = [{"role": t.role, "content": t.content} for t in turns]
+            data["discussionDone"] = any(t.kind == "discussion_wrapup" for t in turns)
         return data
 
 
@@ -255,6 +267,10 @@ class ConversationMessage(db.Model):
     # "module_learning_digest" row) rather than the course as a whole (e.g.
     # interview/outline messages, which stay course-scoped).
     module_id = db.Column(db.String, db.ForeignKey("modules.id"), nullable=True)
+    # Set for messages belonging to one discussion activity's own turn-by-turn
+    # thread (kind="discussion_reply"/"discussion_wrapup" - see
+    # app/services/discussion.py), nullable for every other kind of message.
+    activity_id = db.Column(db.String, db.ForeignKey("activities.id"), nullable=True)
     role = db.Column(db.String, nullable=False)  # 'user' | 'assistant'
     # Free-form tag (e.g. "interview_answer", "outline_presented",
     # "direction_change_request") for filtering/context-assembly later,

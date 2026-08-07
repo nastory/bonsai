@@ -56,6 +56,16 @@ export function generateActivityFeedback(activityId: string, response: string): 
   });
 }
 
+export function submitDiscussionReply(
+  activityId: string,
+  message: string,
+): Promise<{ done: boolean; message: string }> {
+  return request<{ done: boolean; message: string }>(`/activities/${activityId}/discussion-messages`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
 export function fetchCourse(courseId: string): Promise<Course> {
   return request<Course>(`/courses/${courseId}`);
 }

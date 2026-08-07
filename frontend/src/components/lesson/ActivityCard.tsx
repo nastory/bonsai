@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
-import type { Activity } from '../../types/course';
-import { generateActivityFeedback } from '../../lib/api';
+import type { Activity, DiscussionMessage, QuizQuestion } from '../../types/course';
+import { generateActivityFeedback, submitDiscussionReply } from '../../lib/api';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -122,24 +122,25 @@ function CheckUnderstanding({ activityId, prompt }: { activityId: string; prompt
   );
 }
 
-function QuizBlock({ activity }: { activity: Activity }) {
+function QuizQuestionBlock({ question, index, total }: { question: QuizQuestion; index: number; total: number }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const answered = selectedIndex !== null;
-  const isCorrect = answered && selectedIndex === activity.correctAnswerIndex;
+  const isCorrect = answered && selectedIndex === question.correctAnswerIndex;
 
   return (
     <div>
       <p className="text-sm font-medium text-bonsai-text">
-        <InlineMarkdown>{activity.question ?? ''}</InlineMarkdown>
+        {total > 1 && <span className="text-bonsai-text-muted">Question {index + 1} of {total}. </span>}
+        <InlineMarkdown>{question.question}</InlineMarkdown>
       </p>
       <div className="mt-3 space-y-2">
-        {activity.options?.map((option, index) => {
-          const isCorrectOption = index === activity.correctAnswerIndex;
-          const isPickedWrong = answered && index === selectedIndex && !isCorrectOption;
+        {question.options.map((option, optionIndex) => {
+          const isCorrectOption = optionIndex === question.correctAnswerIndex;
+          const isPickedWrong = answered && optionIndex === selectedIndex && !isCorrectOption;
           return (
             <button
               key={option}
-              onClick={() => setSelectedIndex(index)}
+              onClick={() => setSelectedIndex(optionIndex)}
               disabled={isCorrect}
               className={`w-full rounded-lg border px-4 py-2.5 text-left text-sm transition-colors disabled:cursor-not-allowed ${
                 isCorrect && isCorrectOption
@@ -159,9 +160,9 @@ function QuizBlock({ activity }: { activity: Activity }) {
           <p className={`text-sm font-medium ${isCorrect ? 'text-bonsai-green' : 'text-red-600'}`}>
             {isCorrect ? 'Correct!' : 'Not quite — try again.'}
           </p>
-          {isCorrect && activity.explanation && (
+          {isCorrect && question.explanation && (
             <p className="mt-1 text-sm text-bonsai-text-muted">
-              <InlineMarkdown>{activity.explanation}</InlineMarkdown>
+              <InlineMarkdown>{question.explanation}</InlineMarkdown>
             </p>
           )}
         </div>
@@ -170,7 +171,19 @@ function QuizBlock({ activity }: { activity: Activity }) {
   );
 }
 
-function OpenResponseBlock({ activity, kind }: { activity: Activity; kind: 'essay' | 'project' }) {
+function QuizBlock({ activity }: { activity: Activity }) {
+  const questions = activity.questions ?? [];
+
+  return (
+    <div className="space-y-6">
+      {questions.map((question, index) => (
+        <QuizQuestionBlock key={index} question={question} index={index} total={questions.length} />
+      ))}
+    </div>
+  );
+}
+
+function OpenResponseBlock({ activity, kind }: { activity: Activity; kind: 'essay' | 'project' | 'capstone' }) {
   const [response, setResponse] = useState('');
   const { status, feedback, submit } = useActivityFeedback(activity.id);
   const done = status === 'done' || status === 'error';
@@ -185,7 +198,7 @@ function OpenResponseBlock({ activity, kind }: { activity: Activity; kind: 'essa
         onChange={(e) => setResponse(e.target.value)}
         disabled={status === 'loading' || done}
         rows={5}
-        placeholder={kind === 'project' ? 'Describe what you built or tried...' : 'Write your response...'}
+        placeholder={kind === 'essay' ? 'Write your response...' : 'Describe what you built or tried...'}
         className="mt-3 w-full rounded-lg border border-bonsai-border bg-white px-4 py-3 text-sm text-bonsai-text placeholder:text-bonsai-text-muted focus:outline-none focus:ring-2 focus:ring-bonsai-green/40"
       />
       <Button
@@ -201,34 +214,64 @@ function OpenResponseBlock({ activity, kind }: { activity: Activity; kind: 'essa
 }
 
 function DiscussionBlock({ activity }: { activity: Activity }) {
-  const [reply, setReply] = useState('');
-  const [sent, setSent] = useState(false);
-  const { status, feedback, submit } = useActivityFeedback(activity.id);
+  // A real multi-turn conversation (target 3, hard cap 5 exchanges - see
+  // app/services/discussion.py), not the single-shot submit-and-get-feedback
+  // flow the other free-response blocks use. Seeded from the activity's
+  // already-persisted thread (activity.messages/discussionDone) so a page
+  // refresh picks up right where an in-progress discussion left off, with
+  // no separate fetch needed - the course reload that already happens on
+  // mount already carries this.
+  const [messages, setMessages] = useState<DiscussionMessage[]>(activity.messages ?? []);
+  const [done, setDone] = useState(activity.discussionDone ?? false);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed || sending || done) return;
+
+    setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
+    setInput('');
+    setSending(true);
+    setError(false);
+
+    try {
+      const result = await submitDiscussionReply(activity.id, trimmed);
+      setMessages((prev) => [...prev, { role: 'assistant', content: result.message }]);
+      setDone(result.done);
+    } catch {
+      setError(true);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
       <ChatBubble from="bonsai">{activity.prompt ?? ''}</ChatBubble>
-      {sent && <ChatBubble from="user">{reply}</ChatBubble>}
-      {sent && status === 'loading' && (
+      {messages.map((message, i) => (
+        <ChatBubble key={i} from={message.role === 'user' ? 'user' : 'bonsai'}>
+          {message.content}
+        </ChatBubble>
+      ))}
+      {sending && (
         <div className="flex items-center gap-2 pl-11 text-sm text-bonsai-text-muted">
           <Loader2 className="h-4 w-4 animate-spin" />
           Thinking about your reply...
         </div>
       )}
-      {sent && (status === 'done' || status === 'error') && <ChatBubble from="bonsai">{feedback}</ChatBubble>}
-      {!sent && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const trimmed = reply.trim();
-            if (!trimmed) return;
-            setSent(true);
-            submit(trimmed);
-          }}
-          className="flex gap-2"
-        >
-          <Input value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Type your reply..." />
-          <Button type="submit" disabled={!reply.trim()}>
+      {error && <p className="pl-11 text-sm text-red-600">Couldn't send that — try again.</p>}
+      {!done && (
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your reply..."
+            disabled={sending}
+          />
+          <Button type="submit" disabled={!input.trim() || sending}>
             Send
           </Button>
         </form>
@@ -259,6 +302,8 @@ export function ActivityCard({ activity }: { activity: Activity }) {
       {activity.type === 'project' && <OpenResponseBlock activity={activity} kind="project" />}
 
       {activity.type === 'discussion' && <DiscussionBlock activity={activity} />}
+
+      {activity.type === 'capstone' && <OpenResponseBlock activity={activity} kind="capstone" />}
     </Card>
   );
 }

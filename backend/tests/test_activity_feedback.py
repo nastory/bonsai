@@ -1,10 +1,12 @@
 """Tests for /api/activities/<id>/feedback: real feedback on a learner's free-text response.
 
-Covers essay/project/discussion activities and a reading's checkPrompt
+Covers essay/project/capstone activities and a reading's checkPrompt
 comprehension check - the activities that used to get fixed canned copy
 regardless of what was actually written (see the deleted frontend
 lib/feedback.ts). Quiz/assessment activities reject this endpoint entirely:
-they already have real per-question feedback from generation.
+they already have real per-question feedback from generation. Discussion
+activities reject it too - see test_discussion.py/test_discussion_routes.py
+for their own real, multi-turn endpoint instead.
 """
 
 from app.extensions import db as _db
@@ -53,8 +55,17 @@ def test_feedback_mock_mode_returns_canned_result_referencing_kind(client, db) -
     assert "essay" in response.get_json()["feedback"]
 
 
+def test_feedback_accepts_capstone_activities(client, db) -> None:
+    _seed_activity("a1", "capstone", {"prompt": "Build something that ties the course together."})
+
+    response = client.post("/api/activities/a1/feedback", json={"response": "Here's what I built."})
+
+    assert response.status_code == 200
+    assert "capstone" in response.get_json()["feedback"]
+
+
 def test_feedback_real_mode_reads_the_activitys_own_prompt_and_the_response(real_llm_client, monkeypatch) -> None:
-    _seed_activity("a1", "discussion", {"prompt": "What do you think about X?"})
+    _seed_activity("a1", "essay", {"prompt": "What do you think about X?"})
     captured: dict = {}
 
     def fake_completion(**kwargs):
@@ -72,6 +83,14 @@ def test_feedback_real_mode_reads_the_activitys_own_prompt_and_the_response(real
     data_message = captured["messages"][1]["content"]
     assert "What do you think about X?" in data_message
     assert "I think X is important because..." in data_message
+
+
+def test_feedback_rejects_discussion_activities(client, db) -> None:
+    _seed_activity("a1", "discussion", {"prompt": "What do you think about X?"})
+
+    response = client.post("/api/activities/a1/feedback", json={"response": "My reply."})
+
+    assert response.status_code == 400
 
 
 def test_feedback_uses_the_learners_configured_tone(real_llm_client, monkeypatch) -> None:

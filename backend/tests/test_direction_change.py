@@ -255,3 +255,60 @@ def test_direction_outline_prompt_includes_learning_history(real_llm_app, monkey
         generate_direction_change_outline("m0")
 
         assert "Covered the basics." in captured["prompt"]
+
+
+def test_direction_outline_prompt_includes_activity_usage_summary(real_llm_app, monkeypatch) -> None:
+    with real_llm_app.app_context():
+        _make_course_with_modules(real_llm_app)
+
+        monkeypatch.setattr(
+            "app.services.llm.litellm.completion",
+            lambda **kwargs: _FakeResponse('{"coverage": "open", "done": false, "question": "a question"}'),
+        )
+        start_direction_change("m0", "I want to focus more on hardware internals")
+
+        captured: dict = {}
+
+        def fake_completion(**kwargs):
+            captured["prompt"] = kwargs["messages"][0]["content"]
+            return _FakeResponse(
+                '{"modules": [{"title": "T", "description": "d", "estimatedTimeline": "1 week", '
+                '"learningOutcomes": [], "plannedActivities": []}]}'
+            )
+
+        monkeypatch.setattr("app.services.llm.litellm.completion", fake_completion)
+
+        generate_direction_change_outline("m0")
+
+        assert "1 reading" in captured["prompt"]
+
+
+def test_activity_type_usage_summary_counts_generated_activities_up_to_the_given_position(app, db) -> None:
+    from app.services.course_generation import _activity_type_usage_summary
+
+    with app.app_context():
+        course = _make_course_with_modules(app)
+
+        summary = _activity_type_usage_summary(course, up_to_module_position=0)
+
+        assert summary == "Activity types already used earlier in this course: 1 reading"
+
+
+def test_activity_type_usage_summary_falls_back_when_nothing_generated_yet(app, db) -> None:
+    from app.services.course_generation import _activity_type_usage_summary
+
+    with app.app_context():
+        course = Course(
+            id="c2", title="T", description="d", prerequisites=[], estimated_timeline="1 week", thumbnail_url="x"
+        )
+        module = Module(
+            id="m0", course_id="c2", position=0, title="M", description="d",
+            estimated_timeline="1 week", status="in_progress", learning_outcomes=[],
+        )
+        course.modules = [module]
+        db.session.add(course)
+        db.session.commit()
+
+        summary = _activity_type_usage_summary(course, up_to_module_position=0)
+
+        assert summary == "No activities have been generated yet in this course."

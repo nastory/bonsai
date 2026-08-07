@@ -39,6 +39,16 @@ by capping history size or configuring a larger context window. Document
 grounding at least no longer makes this worse with document size (see
 vector_store.py) - only the number of retrieved chunks per activity, a
 small fixed cap, affects prompt size now, not the source document's length.
+
+Compounds worst on the course's closing assessment activity (see
+llm_schemas.py's GeneratedAssessmentDecodingSchema): it's generated as the
+very last activity of the very last module, so it hits this same
+cumulative-prompt-size tradeoff at its worst point, on top of the full
+course's learning history, while also needing to emit 10-15 full question
+objects in one response - all within a local model's OLLAMA_NUM_CTX (see
+llm.py). Disclosed, not solved, for the same reason as above: worth a
+per-call num_ctx override for this one call specifically if real usage
+shows truncation, not preemptively.
 """
 
 from dataclasses import dataclass
@@ -55,9 +65,11 @@ from app.services.llm import complete
 from app.services.llm_schemas import (
     CitationSchema,
     GeneratedActivitySchema,
-    GeneratedQuizActivityDecodingSchema,
+    GeneratedAssessmentDecodingSchema,
+    GeneratedQuizDecodingSchema,
     ModuleDigestSchema,
     ModuleSearchPlanSchema,
+    QuizQuestionSchema,
     VideoSelectionSchema,
     VisualAidPlanSchema,
     validate_llm_json,
@@ -297,16 +309,20 @@ def _generate_activities_content(
     for i, planned in enumerate(module.activity_plan):
         turn = _activity_turn_message(i, module.activity_plan, planned, results_by_activity.get(i, []))
         messages.append({"role": "user", "content": turn})
-        # Quiz/assessment calls get a stricter decoding-only schema (with
-        # correctAnswerIndex/explanation genuinely required, not Optional as
-        # they are on GeneratedActivitySchema, which every other activity
-        # type also shares) — see GeneratedQuizActivityDecodingSchema's
-        # docstring for why this actually matters, not just belt-and-suspenders.
-        decoding_schema = (
-            GeneratedQuizActivityDecodingSchema
-            if planned["type"] in ("quiz", "assessment")
-            else GeneratedActivitySchema
-        )
+        # Quiz/assessment calls get a stricter decoding-only schema each
+        # (with "questions" genuinely required and count-bounded, not
+        # Optional/unbounded as it is on GeneratedActivitySchema, which
+        # every other activity type also shares) — see
+        # GeneratedQuizDecodingSchema's docstring for why this actually
+        # matters, not just belt-and-suspenders. Separate schemas per type,
+        # not one shared one, so each can steer its own question-count
+        # range (1-3 for quiz, 10-15 for the course-closing assessment).
+        if planned["type"] == "quiz":
+            decoding_schema = GeneratedQuizDecodingSchema
+        elif planned["type"] == "assessment":
+            decoding_schema = GeneratedAssessmentDecodingSchema
+        else:
+            decoding_schema = GeneratedActivitySchema
         raw = complete(
             messages=messages,
             schema=decoding_schema,
@@ -579,8 +595,12 @@ def _format_generated_activities(module: Module) -> str:
     for activity in module.activities:
         content = activity.to_dict()
         # "caption" covers a video activity, which has neither body/prompt/
-        # question - see _maybe_build_video_spec()'s content shape.
-        text = content.get("body") or content.get("prompt") or content.get("question") or content.get("caption") or ""
+        # questions - see _maybe_build_video_spec()'s content shape.
+        # For quiz/assessment, use the first question as a representative
+        # sample rather than every question - this is just a short digest.
+        questions = content.get("questions") or []
+        first_question = questions[0]["question"] if questions else ""
+        text = content.get("body") or content.get("prompt") or first_question or content.get("caption") or ""
         lines.append(f"- [{activity.activity_type}] {activity.title}: {text[:300]}")
     return "\n".join(lines)
 
@@ -602,19 +622,30 @@ def _mock_activity(planned: dict) -> GeneratedActivitySchema:
             citations=[CitationSchema(label="[MOCK] Example Source", url="https://example.com/mock-source")],
             checkPrompt=f"[MOCK] What's the key idea behind {planned['title']}?",
         )
-    if activity_type in ("essay", "project", "discussion"):
+    if activity_type in ("essay", "project", "discussion", "capstone"):
         return GeneratedActivitySchema(
             type=activity_type,
             title=title,
             estimatedMinutes=15,
             prompt=f"[MOCK] {planned['plan']}",
         )
+    # quiz/assessment: a real quiz has 1-3 questions, a real assessment has
+    # 10-15 - the mock doesn't need to hit either exact range (it never goes
+    # through the count-bounded decoding schemas, only LLM_TEST_MODE's
+    # bypass of complete() entirely), just enough questions to exercise the
+    # list shape realistically. 3 for assessment, 2 for quiz.
+    question_count = 3 if activity_type == "assessment" else 2
     return GeneratedActivitySchema(
         type=activity_type,
         title=title,
         estimatedMinutes=10,
-        question=f"[MOCK] Check: {planned['plan']}",
-        options=["[MOCK] Option A", "[MOCK] Option B"],
-        correctAnswerIndex=0,
-        explanation="[MOCK] Explanation of why this is correct.",
+        questions=[
+            QuizQuestionSchema(
+                question=f"[MOCK] Check {n + 1}: {planned['plan']}",
+                options=["[MOCK] Option A", "[MOCK] Option B"],
+                correctAnswerIndex=0,
+                explanation="[MOCK] Explanation of why this is correct.",
+            )
+            for n in range(question_count)
+        ],
     )

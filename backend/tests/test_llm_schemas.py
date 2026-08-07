@@ -8,14 +8,22 @@ as a confusing KeyError deep in course_generation.py.
 
 import pytest
 
+from pydantic import ValidationError
+
 from app.services.llm_schemas import (
     CourseOutlineSchema,
     GeneratedActivitySchema,
+    GeneratedAssessmentDecodingSchema,
+    GeneratedQuizDecodingSchema,
     InterviewStepSchema,
     LLMOutputValidationError,
     ModuleDigestSchema,
     validate_llm_json,
 )
+
+
+def _question(n: int = 1) -> dict:
+    return {"question": f"Q{n}", "options": ["A", "B"], "correctAnswerIndex": 0, "explanation": f"e{n}"}
 
 
 def test_validate_llm_json_accepts_well_formed_interview_step() -> None:
@@ -151,6 +159,24 @@ def test_validate_llm_json_raises_for_invalid_planned_activity_type() -> None:
         validate_llm_json(raw, CourseOutlineSchema)
 
 
+def test_validate_llm_json_accepts_capstone_planned_activity() -> None:
+    raw = """
+    {
+        "title": "T", "description": "d", "prerequisites": [], "estimatedTimeline": "1 week",
+        "modules": [
+            {
+                "title": "M", "description": "d", "estimatedTimeline": "1 week",
+                "plannedActivities": [{"type": "capstone", "title": "Final Project", "plan": "Tie it all together."}]
+            }
+        ]
+    }
+    """
+
+    result = validate_llm_json(raw, CourseOutlineSchema)
+
+    assert result.modules[0].plannedActivities[0].type == "capstone"
+
+
 def test_validate_llm_json_accepts_well_formed_generated_activity() -> None:
     raw = '{"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."}'
 
@@ -167,13 +193,22 @@ def test_validate_llm_json_raises_for_invalid_activity_type() -> None:
         validate_llm_json(raw, GeneratedActivitySchema)
 
 
+def test_validate_llm_json_accepts_capstone_generated_activity() -> None:
+    raw = '{"type": "capstone", "title": "Capstone Project", "estimatedMinutes": 60, "prompt": "Build something real."}'
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert result.type == "capstone"
+    assert result.prompt == "Build something real."
+
+
 def test_validate_llm_json_generated_activity_omits_type_specific_fields_when_not_given() -> None:
     raw = '{"type": "discussion", "title": "Talk", "estimatedMinutes": 10, "prompt": "Thoughts?"}'
 
     result = validate_llm_json(raw, GeneratedActivitySchema)
 
     assert result.body is None
-    assert result.question is None
+    assert result.questions is None
     assert result.prompt == "Thoughts?"
 
 
@@ -217,25 +252,48 @@ def test_validate_llm_json_accepts_well_formed_quiz_with_answer_and_explanation(
     raw = """
     {
         "type": "quiz", "title": "Check", "estimatedMinutes": 10,
-        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
-        "correctAnswerIndex": 0, "explanation": "GPUs are specialized processors."
+        "questions": [
+            {
+                "question": "What is a GPU?", "options": ["A processor", "A monitor"],
+                "correctAnswerIndex": 0, "explanation": "GPUs are specialized processors."
+            }
+        ]
     }
     """
 
     result = validate_llm_json(raw, GeneratedActivitySchema)
 
-    assert result.correctAnswerIndex == 0
-    assert result.explanation == "GPUs are specialized processors."
+    assert result.questions[0].correctAnswerIndex == 0
+    assert result.questions[0].explanation == "GPUs are specialized processors."
 
 
-def test_validate_llm_json_raises_when_quiz_is_missing_a_correct_answer() -> None:
+def test_validate_llm_json_accepts_a_quiz_with_multiple_questions() -> None:
     raw = """
     {
         "type": "quiz", "title": "Check", "estimatedMinutes": 10,
-        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
-        "explanation": "GPUs are specialized processors."
+        "questions": [
+            {"question": "Q1", "options": ["A", "B"], "correctAnswerIndex": 0, "explanation": "e1"},
+            {"question": "Q2", "options": ["A", "B"], "correctAnswerIndex": 1, "explanation": "e2"},
+            {"question": "Q3", "options": ["A", "B"], "correctAnswerIndex": 0, "explanation": "e3"}
+        ]
     }
     """
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert len(result.questions) == 3
+    assert [q.question for q in result.questions] == ["Q1", "Q2", "Q3"]
+
+
+def test_validate_llm_json_raises_when_quiz_has_no_questions() -> None:
+    raw = '{"type": "quiz", "title": "Check", "estimatedMinutes": 10, "questions": []}'
+
+    with pytest.raises(LLMOutputValidationError):
+        validate_llm_json(raw, GeneratedActivitySchema)
+
+
+def test_validate_llm_json_raises_when_quiz_omits_questions_entirely() -> None:
+    raw = '{"type": "quiz", "title": "Check", "estimatedMinutes": 10}'
 
     with pytest.raises(LLMOutputValidationError):
         validate_llm_json(raw, GeneratedActivitySchema)
@@ -245,8 +303,12 @@ def test_validate_llm_json_raises_when_correct_answer_index_is_out_of_range() ->
     raw = """
     {
         "type": "assessment", "title": "Check", "estimatedMinutes": 10,
-        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
-        "correctAnswerIndex": 5, "explanation": "GPUs are specialized processors."
+        "questions": [
+            {
+                "question": "What is a GPU?", "options": ["A processor", "A monitor"],
+                "correctAnswerIndex": 5, "explanation": "GPUs are specialized processors."
+            }
+        ]
     }
     """
 
@@ -254,17 +316,59 @@ def test_validate_llm_json_raises_when_correct_answer_index_is_out_of_range() ->
         validate_llm_json(raw, GeneratedActivitySchema)
 
 
-def test_validate_llm_json_raises_when_quiz_is_missing_an_explanation() -> None:
+def test_validate_llm_json_raises_when_one_question_among_several_is_missing_an_explanation() -> None:
     raw = """
     {
         "type": "quiz", "title": "Check", "estimatedMinutes": 10,
-        "question": "What is a GPU?", "options": ["A processor", "A monitor"],
-        "correctAnswerIndex": 0
+        "questions": [
+            {"question": "Q1", "options": ["A", "B"], "correctAnswerIndex": 0, "explanation": "e1"},
+            {"question": "Q2", "options": ["A", "B"], "correctAnswerIndex": 1, "explanation": ""}
+        ]
     }
     """
 
     with pytest.raises(LLMOutputValidationError):
         validate_llm_json(raw, GeneratedActivitySchema)
+
+
+def test_quiz_decoding_schema_accepts_one_to_three_questions() -> None:
+    for count in (1, 2, 3):
+        GeneratedQuizDecodingSchema(
+            type="quiz", title="Check", estimatedMinutes=10, questions=[_question(n) for n in range(count)]
+        )
+
+
+def test_quiz_decoding_schema_rejects_more_than_three_questions() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedQuizDecodingSchema(
+            type="quiz", title="Check", estimatedMinutes=10, questions=[_question(n) for n in range(4)]
+        )
+
+
+def test_quiz_decoding_schema_rejects_zero_questions() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedQuizDecodingSchema(type="quiz", title="Check", estimatedMinutes=10, questions=[])
+
+
+def test_assessment_decoding_schema_accepts_ten_to_fifteen_questions() -> None:
+    for count in (10, 12, 15):
+        GeneratedAssessmentDecodingSchema(
+            type="assessment", title="Final", estimatedMinutes=30, questions=[_question(n) for n in range(count)]
+        )
+
+
+def test_assessment_decoding_schema_rejects_fewer_than_ten_questions() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedAssessmentDecodingSchema(
+            type="assessment", title="Final", estimatedMinutes=30, questions=[_question(n) for n in range(9)]
+        )
+
+
+def test_assessment_decoding_schema_rejects_more_than_fifteen_questions() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedAssessmentDecodingSchema(
+            type="assessment", title="Final", estimatedMinutes=30, questions=[_question(n) for n in range(16)]
+        )
 
 
 def test_validate_llm_json_accepts_well_formed_module_digest() -> None:

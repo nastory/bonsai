@@ -5,7 +5,8 @@ export type ActivityType =
   | 'essay'
   | 'project'
   | 'discussion'
-  | 'assessment';
+  | 'assessment'
+  | 'capstone';
 
 // No 'locked': a module's activities are always generated together (see
 // module_generation.py), so an activity either doesn't exist yet (the
@@ -19,6 +20,19 @@ export interface Citation {
   label: string;
   /** Absent for a document source-material citation (e.g. "paper.pdf, p. 4") - only a web citation has a real URL. */
   url?: string;
+}
+
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  /** Which of "options" is correct (by index), and why. */
+  correctAnswerIndex: number;
+  explanation: string;
+}
+
+export interface DiscussionMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface Activity {
@@ -36,16 +50,14 @@ export interface Activity {
   videoUrl?: string;
   videoId?: string;
   caption?: string;
-  /** Quiz-specific fields. */
-  question?: string;
-  options?: string[];
-  /** Which of "options" is correct (by index), and why — quiz/assessment only. */
-  correctAnswerIndex?: number;
-  explanation?: string;
-  /** Essay/project/discussion seed prompt. */
+  /** Quiz/assessment-only: 1-3 questions for a quiz, 10-15 for the course's closing assessment. */
+  questions?: QuizQuestion[];
+  /** Essay/project/discussion/capstone seed prompt — for discussion, this is the opening line, not persisted as a message itself. */
   prompt?: string;
-  /** True when this activity is a capstone/practicum-style project. */
-  isCapstone?: boolean;
+  /** Discussion-only: the real back-and-forth so far (the opening "prompt" line isn't included here). */
+  messages?: DiscussionMessage[];
+  /** Discussion-only: true once the conversation has reached its closing turn. */
+  discussionDone?: boolean;
   /** Optional short comprehension check embedded at the end of a reading, rendered distinctly from the main content. */
   checkPrompt?: string;
 }

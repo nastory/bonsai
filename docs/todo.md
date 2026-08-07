@@ -8,3 +8,4 @@
   (e.g. how many readings before a check, how often a project vs. an essay
   makes sense for a given topic). Would inform both the outline-generation
   prompt and the PRD/design docs.
+- Explore adding flash cards for modules and courses

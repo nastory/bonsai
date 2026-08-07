@@ -2,8 +2,9 @@
 
 Per the PRD: exercises are feedback-only, never graded. Quizzes/assessments
 already get this from a real generated explanation (see
-GeneratedActivitySchema's correctAnswerIndex/explanation). This module covers
-the other free-response cases - essay/project/discussion activities, and a
+GeneratedActivitySchema's questions[].correctAnswerIndex/explanation). This
+module covers the other free-response cases - essay/project/discussion/
+capstone activities, and a
 reading's optional comprehension check (GeneratedActivitySchema.checkPrompt) -
 which used to show fixed canned copy regardless of what the learner actually
 wrote (see the now-deleted lib/feedback.ts on the frontend). Generated fresh
@@ -38,10 +39,10 @@ def generate_activity_feedback(
 
     Args:
         prompt_text: The activity's own seed prompt/question (its `prompt`
-            for essay/project/discussion, or `checkPrompt` for a reading's
+            for essay/project/capstone, or `checkPrompt` for a reading's
             comprehension check).
         response_text: What the learner actually wrote.
-        kind: One of "essay", "project", "discussion", "check" - shapes the
+        kind: One of "essay", "project", "capstone", "check" - shapes the
             prompt's framing of what kind of response this is.
         tone: UserSettings.feedback_tone ("encouraging" or "straightforward").
         course_id: The activity's course, for usage logging (see llm.py's
