@@ -138,3 +138,70 @@ def test_delete_vector_index_removes_index_and_metadata_files(app) -> None:
 def test_delete_vector_index_is_a_no_op_for_a_missing_file(app) -> None:
     with app.app_context():
         delete_vector_index("vector_indexes/does-not-exist.faiss")
+
+
+def test_build_or_update_index_appends_even_with_a_stale_course_object(app) -> None:
+    """Regression test for a real, confirmed lost-update bug: two different in-memory
+    Course objects for the same course id (e.g. from two separate request-scoped DB
+    sessions) both starting with vector_index_path=None. The second call must still
+    append to the real file on disk, not overwrite it - the new-vs-append decision is
+    based on whether the file actually exists, not the passed-in Course's own
+    (possibly stale) attribute."""
+    with app.app_context():
+        course_a = Course(id="vec-stale-1")
+        build_or_update_index(course_a, _chunks("First chunk."), _CONFIG)
+
+        course_b = Course(id="vec-stale-1")  # fresh object, same id, vector_index_path still None
+        build_or_update_index(course_b, _chunks("Second chunk."), _CONFIG)
+
+        course_b.vector_index_path = "vector_indexes/vec-stale-1.faiss"
+        result = query(course_b, ["chunk"], _CONFIG, top_k=10)
+
+    assert len(result[0]) == 2
+
+
+def test_query_finds_the_index_even_when_vector_index_path_is_stale_none(app) -> None:
+    """The other half of the same fix: a query shouldn't come back empty just because
+    Course.vector_index_path itself was lost to a race (or never got committed) - see
+    design.md's AMA "finding nothing" section for the real bug this mirrors."""
+    with app.app_context():
+        course = Course(id="vec-resilient-1")
+        build_or_update_index(course, _chunks("Some real content."), _CONFIG)
+        # Deliberately not setting course.vector_index_path.
+
+        result = query(course, ["content"], _CONFIG, top_k=5)
+
+    assert len(result[0]) == 1
+
+
+def test_build_or_update_index_is_safe_under_real_concurrent_writers(app, monkeypatch) -> None:
+    """Two threads writing to the same course's index at the same time (e.g. two
+    browser tabs triggering generation for two different modules of one course around
+    the same time, now that the dev server runs threaded=True) must not lose either
+    one's chunks."""
+    import threading
+    import time
+
+    def slow_embed(texts, **kwargs):
+        time.sleep(0.05)  # widens the race window so the threads' critical sections genuinely overlap
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    monkeypatch.setattr("app.services.vector_store.embed", slow_embed)
+    course = Course(id="vec-concurrent-1")
+
+    def worker(text: str) -> None:
+        with app.app_context():
+            build_or_update_index(course, _chunks(text), _CONFIG)
+
+    t1 = threading.Thread(target=worker, args=("Chunk from thread A.",))
+    t2 = threading.Thread(target=worker, args=("Chunk from thread B.",))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    with app.app_context():
+        course.vector_index_path = "vector_indexes/vec-concurrent-1.faiss"
+        result = query(course, ["chunk"], _CONFIG, top_k=10)
+
+    assert len(result[0]) == 2

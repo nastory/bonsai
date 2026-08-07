@@ -14,4 +14,11 @@ if __name__ == "__main__":
     # sets this to 0.0.0.0, since binding to 127.0.0.1 inside a container
     # would be unreachable from the host despite the port mapping.
     host = os.environ.get("BONSAI_HOST", "127.0.0.1")
-    app.run(debug=True, port=5000, host=host)
+    # threaded=True: without it, Werkzeug's dev server handles one request
+    # at a time - a module generation call (dominated by blocking LLM/Tavily
+    # I/O) would block every other request, including just loading another
+    # page, until it finishes. Safe to enable now that vector_store.py's
+    # course-index reads/writes are guarded by a per-course lock (see its
+    # own module docstring) - the one piece of shared, file-backed state
+    # this app's request handlers actually touch concurrently.
+    app.run(debug=True, port=5000, host=host, threaded=True)

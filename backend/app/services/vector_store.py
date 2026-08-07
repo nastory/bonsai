@@ -14,9 +14,29 @@ cosine similarity) - deliberate: a single local user's per-course chunk
 count (tens to low hundreds even for a large document) is trivially fast
 with brute-force search, so an approximate index (IVF/HNSW) would be
 unjustified complexity at this scale.
+
+Thread-safety: since the dev server runs threaded (see run.py), two
+requests can now genuinely run this module's code concurrently - e.g. two
+browser tabs each triggering module generation for a different module of
+the same course around the same time. Every function that touches a
+course's index file pair goes through a per-course lock (_course_index_lock())
+below, guarding the read-modify-write as one critical section. The new-vs-
+append decision and the read path are also deliberately re-derived from
+whether the file actually exists on disk (course.id's deterministic path),
+not trusted from the passed-in Course object's own vector_index_path
+attribute - that attribute can be stale relative to another thread's
+just-committed (or not-yet-committed) write, which is exactly the gap that
+caused a real, confirmed lost-update bug once already (see design.md's AMA
+"finding nothing" section). This only guards against races within this one
+process (an in-process threading.Lock, not a cross-process file lock) -
+this app's actual deployment is always a single process (one Docker
+container, or one `python run.py`), so that's the only concurrency model
+that matters here.
 """
 
 import json
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 import faiss
@@ -29,15 +49,29 @@ from app.services.embedding import embed
 
 VECTOR_INDEX_SUBDIR = "vector_indexes"
 
+# One lock per course id, created on first use. _locks_guard protects the
+# dict itself (plain dict mutation isn't atomic across threads either) -
+# the per-course locks it hands out are what actually serialize access to
+# that course's index files.
+_course_index_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+@contextmanager
+def _course_index_lock(course_id: str):
+    with _locks_guard:
+        lock = _course_index_locks.setdefault(course_id, threading.Lock())
+    with lock:
+        yield
+
 
 def build_or_update_index(course: Course, chunks: list[Chunk], config: dict) -> str:
     """Embed and add chunks to a course's vector index, creating it if it doesn't exist yet.
 
     A course can gain source materials across multiple ingestion calls (a
     learner can attach a document mid-interview, not just at course
-    creation), so this loads any existing index first (via
-    course.vector_index_path) and appends rather than overwriting - each
-    call's chunks get fresh, never-reused ids.
+    creation), so this loads any existing index first and appends rather
+    than overwriting - each call's chunks get fresh, never-reused ids.
 
     Args:
         course: The course the chunks belong to. Does not write the
@@ -49,36 +83,41 @@ def build_or_update_index(course: Course, chunks: list[Chunk], config: dict) -> 
         The index file's path, relative to instance_path, for storing on
         Course.vector_index_path.
     """
+    relative_path = Path(VECTOR_INDEX_SUBDIR) / f"{course.id}.faiss"
+    index_path = _resolve(str(relative_path))
+    metadata_path = index_path.with_suffix(".json")
+
     vectors = np.array(embed([c.text for c in chunks], **config), dtype="float32")
     faiss.normalize_L2(vectors)
 
-    if course.vector_index_path:
-        index_path = _resolve(course.vector_index_path)
-        metadata_path = index_path.with_suffix(".json")
-        index = faiss.read_index(str(index_path))
-        metadata: dict[str, dict] = json.loads(metadata_path.read_text())
-    else:
-        relative_path = Path(VECTOR_INDEX_SUBDIR) / f"{course.id}.faiss"
-        index_path = _resolve(str(relative_path))
-        metadata_path = index_path.with_suffix(".json")
-        index = faiss.IndexIDMap(faiss.IndexFlatIP(vectors.shape[1]))
-        metadata = {}
+    with _course_index_lock(course.id):
+        # Whether to append or start fresh is decided by the file's real
+        # presence on disk, checked fresh under the lock - not by
+        # course.vector_index_path, which could be stale (None even though
+        # another thread already created the file, or vice versa).
+        if index_path.exists():
+            index = faiss.read_index(str(index_path))
+            metadata: dict[str, dict] = json.loads(metadata_path.read_text())
+        else:
+            index = faiss.IndexIDMap(faiss.IndexFlatIP(vectors.shape[1]))
+            metadata = {}
 
-    next_id = max((int(k) for k in metadata), default=-1) + 1
-    ids = np.arange(next_id, next_id + len(chunks))
-    index.add_with_ids(vectors, ids)
-    for chunk_id, chunk in zip(ids, chunks):
-        metadata[str(int(chunk_id))] = {
-            "text": chunk.text,
-            "source": chunk.source,
-            "page": chunk.page,
-            "url": chunk.url,
-        }
+        next_id = max((int(k) for k in metadata), default=-1) + 1
+        ids = np.arange(next_id, next_id + len(chunks))
+        index.add_with_ids(vectors, ids)
+        for chunk_id, chunk in zip(ids, chunks):
+            metadata[str(int(chunk_id))] = {
+                "text": chunk.text,
+                "source": chunk.source,
+                "page": chunk.page,
+                "url": chunk.url,
+            }
 
-    index_path.parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(index_path))
-    metadata_path.write_text(json.dumps(metadata))
-    return course.vector_index_path or str(Path(VECTOR_INDEX_SUBDIR) / f"{course.id}.faiss")
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        faiss.write_index(index, str(index_path))
+        metadata_path.write_text(json.dumps(metadata))
+
+    return str(relative_path)
 
 
 def query(course: Course, query_texts: list[str], config: dict, top_k: int) -> dict[int, list[Chunk]]:
@@ -90,9 +129,9 @@ def query(course: Course, query_texts: list[str], config: dict, top_k: int) -> d
     module_retrieval.py's retrieve_for_module() uses it).
 
     Args:
-        course: The course to search. If it has no vector_index_path yet
-            (no source materials ingested, or ingestion predates this
-            feature), every query maps to an empty list.
+        course: The course to search. If it has no index yet on disk (no
+            source materials ingested, or ingestion predates this feature),
+            every query maps to an empty list.
         query_texts: The queries, e.g. one per activity in a module.
         config: kwargs for embedding.embed(), from resolve_embedding_config().
         top_k: How many chunks to return per query.
@@ -101,26 +140,32 @@ def query(course: Course, query_texts: list[str], config: dict, top_k: int) -> d
         A dict mapping each query's index (in query_texts) to its ranked
         list of Chunks, closest match first.
     """
-    if not course.vector_index_path:
-        return {i: [] for i in range(len(query_texts))}
-
-    index_path = _resolve(course.vector_index_path)
+    index_path = _resolve(str(Path(VECTOR_INDEX_SUBDIR) / f"{course.id}.faiss"))
     metadata_path = index_path.with_suffix(".json")
-    index = faiss.read_index(str(index_path))
-    metadata: dict[str, dict] = json.loads(metadata_path.read_text())
 
-    vectors = np.array(embed(query_texts, **config), dtype="float32")
-    faiss.normalize_L2(vectors)
+    with _course_index_lock(course.id):
+        # Same file-existence check as build_or_update_index(), for the
+        # same reason: course.vector_index_path can be stale, and this way
+        # a read can never observe a half-written file mid-update either,
+        # since both share this course's lock.
+        if not index_path.exists():
+            return {i: [] for i in range(len(query_texts))}
 
-    k = min(top_k, index.ntotal)
-    if k == 0:
-        return {i: [] for i in range(len(query_texts))}
+        index = faiss.read_index(str(index_path))
+        metadata: dict[str, dict] = json.loads(metadata_path.read_text())
 
-    _, ids = index.search(vectors, k)
-    return {
-        i: [_chunk_from_metadata(metadata[str(chunk_id)]) for chunk_id in row if chunk_id != -1]
-        for i, row in enumerate(ids)
-    }
+        vectors = np.array(embed(query_texts, **config), dtype="float32")
+        faiss.normalize_L2(vectors)
+
+        k = min(top_k, index.ntotal)
+        if k == 0:
+            return {i: [] for i in range(len(query_texts))}
+
+        _, ids = index.search(vectors, k)
+        return {
+            i: [_chunk_from_metadata(metadata[str(chunk_id)]) for chunk_id in row if chunk_id != -1]
+            for i, row in enumerate(ids)
+        }
 
 
 def rank_chunks(chunks: list[Chunk], query_text: str, config: dict, top_k: int) -> list[Chunk]:
@@ -130,7 +175,8 @@ def rank_chunks(chunks: list[Chunk], query_text: str, config: dict, top_k: int) 
     query (e.g. course_context.py's summarize_document_for_interview()) -
     querying the course's persisted index instead would blend in every
     other attached source material's chunks too, which isn't what a
-    per-document summary wants.
+    per-document summary wants. No locking needed here - operates entirely
+    on the given in-memory chunks, never touches a course's index files.
 
     Args:
         chunks: The chunks to rank, e.g. from document_chunking.chunk_pages()
@@ -164,9 +210,15 @@ def delete_vector_index(vector_index_path: str) -> None:
             ignored rather than erroring, since this is cleanup, not a
             load a caller depends on succeeding.
     """
-    index_path = _resolve(vector_index_path)
-    index_path.unlink(missing_ok=True)
-    index_path.with_suffix(".json").unlink(missing_ok=True)
+    # The course id is recoverable from the path itself - build_or_update_index()
+    # always names it "{course.id}.faiss" - so this can take the same lock
+    # as every other function here without needing a separate course_id
+    # parameter, rather than deleting out from under an in-flight write.
+    course_id = Path(vector_index_path).stem
+    with _course_index_lock(course_id):
+        index_path = _resolve(vector_index_path)
+        index_path.unlink(missing_ok=True)
+        index_path.with_suffix(".json").unlink(missing_ok=True)
 
 
 def _resolve(path: str) -> Path:
