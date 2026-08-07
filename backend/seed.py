@@ -65,7 +65,7 @@ def _gpu_programming_course() -> Course:
                   status="completed", estimated_minutes=20),
         Activity(id="m1-a3", position=2, activity_type="discussion", title="Comparing CPU and GPU Design",
                   status="completed", estimated_minutes=10),
-        Activity(id="m1-a4", position=3, activity_type="assessment", title="Module 1 Assessment",
+        Activity(id="m1-a4", position=3, activity_type="quiz", title="Module 1 Check",
                   status="completed", estimated_minutes=10),
     ]
 
@@ -107,7 +107,7 @@ def _gpu_programming_course() -> Course:
             {"type": "reading", "title": "Writing Your First Kernel", "plan": "Kernel syntax and launch configuration."},
             {"type": "reading", "title": "Parallel Patterns: Map, Reduce, Scan", "plan": "The three patterns and when to use each."},
             {"type": "project", "title": "Implement a Parallel Reduction", "plan": "Hands-on reduction kernel."},
-            {"type": "assessment", "title": "Module 3 Assessment", "plan": "Quiz on kernels and parallel patterns."},
+            {"type": "quiz", "title": "Module 3 Check", "plan": "Quiz on kernels and parallel patterns."},
         ],
     )
 
@@ -124,7 +124,8 @@ def _gpu_programming_course() -> Course:
         ],
         activity_plan=[
             {"type": "reading", "title": "Profiling Tools Overview", "plan": "Introduce common GPU profiling tools."},
-            {"type": "project", "title": "Profile and Optimize a Kernel", "plan": "Capstone: profile, optimize, and report gains."},
+            {"type": "capstone", "title": "Profile and Optimize a Kernel", "plan": "Capstone: profile, optimize, and report gains."},
+            {"type": "assessment", "title": "Course Assessment", "plan": "Comprehensive check across the whole course."},
         ],
     )
 
@@ -157,7 +158,8 @@ def _deep_learning_foundations_course() -> Course:
                activity_plan=[
                    {"type": "reading", "title": "Self-Attention Explained", "plan": "Queries, keys, and values."},
                    {"type": "reading", "title": "The Transformer Architecture", "plan": "Encoder/decoder stacks and positional encoding."},
-                   {"type": "project", "title": "Implement Scaled Dot-Product Attention", "plan": "Capstone: build attention from scratch."},
+                   {"type": "capstone", "title": "Implement Scaled Dot-Product Attention", "plan": "Capstone: build attention from scratch."},
+                   {"type": "assessment", "title": "Course Assessment", "plan": "Comprehensive check across the whole course."},
                ]),
     ]
     return course
@@ -185,7 +187,7 @@ def _data_structures_course() -> Course:
                    {"type": "reading", "title": "Stacks & Queues", "plan": "LIFO/FIFO structures and their use cases."},
                    {"type": "reading", "title": "Trees & Traversal", "plan": "Binary trees and traversal orders."},
                    {"type": "project", "title": "Implement a Binary Search Tree", "plan": "Build and traverse a BST."},
-                   {"type": "assessment", "title": "Module 2 Assessment", "plan": "Quiz on stacks, queues, and trees."},
+                   {"type": "quiz", "title": "Module 2 Check", "plan": "Quiz on stacks, queues, and trees."},
                ]),
         Module(id="dsa-module-3", position=2, title="Graphs",
                description="Graph representations, BFS/DFS, and shortest paths.",
@@ -195,7 +197,7 @@ def _data_structures_course() -> Course:
                    {"type": "reading", "title": "Graph Representations", "plan": "Adjacency lists vs. matrices."},
                    {"type": "reading", "title": "BFS, DFS & Shortest Paths", "plan": "Traversal algorithms and Dijkstra's algorithm."},
                    {"type": "project", "title": "Implement Dijkstra's Algorithm", "plan": "Build a shortest-path solver."},
-                   {"type": "assessment", "title": "Module 3 Assessment", "plan": "Quiz on graph algorithms."},
+                   {"type": "quiz", "title": "Module 3 Check", "plan": "Quiz on graph algorithms."},
                ]),
         Module(id="dsa-module-4", position=3, title="Sorting & Searching",
                description="Comparison sorts, divide-and-conquer, and binary search.",
@@ -204,7 +206,7 @@ def _data_structures_course() -> Course:
                activity_plan=[
                    {"type": "reading", "title": "Comparison Sorts", "plan": "Merge sort, quicksort, and their complexity."},
                    {"type": "reading", "title": "Binary Search", "plan": "Divide-and-conquer search on sorted data."},
-                   {"type": "assessment", "title": "Module 4 Assessment", "plan": "Quiz on sorting and searching."},
+                   {"type": "quiz", "title": "Module 4 Check", "plan": "Quiz on sorting and searching."},
                ]),
         Module(id="dsa-module-5", position=4, title="Dynamic Programming Capstone",
                description="A capstone project solving a real optimization problem with DP.",
@@ -212,7 +214,8 @@ def _data_structures_course() -> Course:
                learning_outcomes=["Recognize and solve overlapping-subproblem problems"],
                activity_plan=[
                    {"type": "reading", "title": "Dynamic Programming Fundamentals", "plan": "Overlapping subproblems and memoization."},
-                   {"type": "project", "title": "Solve an Optimization Problem with DP", "plan": "Capstone: apply DP to a real problem."},
+                   {"type": "capstone", "title": "Solve an Optimization Problem with DP", "plan": "Capstone: apply DP to a real problem."},
+                   {"type": "assessment", "title": "Course Assessment", "plan": "Comprehensive check across the whole course."},
                ]),
     ]
     return course
