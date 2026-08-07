@@ -65,6 +65,8 @@ def update_settings() -> Response:
         if goal is not None and (not isinstance(goal, int) or isinstance(goal, bool) or goal < 1):
             abort(400, description="weeklyGoalActivities must be a positive integer or null")
         settings.weekly_goal_activities = goal
+    if "onboardingCompleted" in body:
+        settings.onboarding_completed = bool(body["onboardingCompleted"])
 
     model_provider = body.get("modelProvider", {})
     if "tier" in model_provider:

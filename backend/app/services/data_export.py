@@ -5,12 +5,19 @@ never API keys or other credentials. Bonsai is single-user/single-installation
 (no auth, no multi-tenancy), so this operates on the entire database, not a
 filtered subset.
 
-Every model in this schema uses only String/Text/Integer/Boolean/JSON
-columns except ConversationMessage.created_at (the only DateTime anywhere).
-That's what makes a *generic* column-reflection dump/restore (iterate
-model.__table__.columns) the right approach here, rather than hand-listing
-fields per model: it survives future schema changes without needing to stay
-in sync by hand, with exactly one special case to carry.
+Every model in this schema uses only String/Text/Integer/Boolean/JSON/DateTime
+columns. That's what makes a *generic* column-reflection dump/restore
+(iterate model.__table__.columns) the right approach here, rather than
+hand-listing fields per model: it survives future schema changes without
+needing to stay in sync by hand. DateTime is the one type that needs real
+conversion (isoformat string <-> datetime), and _row_kwargs() below
+introspects the live schema for it rather than hand-listing which columns
+are DateTime - a hand-listed version of this once only covered
+ConversationMessage.created_at, silently missing Activity.completed_at
+(a real bug, confirmed live: importing an export with a completed activity
+crashed) until test_schema_drift.py caught it. That test enforces both of
+this paragraph's claims against the live schema, so it fails immediately if
+either stops being true, instead of a real import crashing on it later.
 """
 
 import io
@@ -81,14 +88,22 @@ def export_data() -> bytes:
 
 def _row_kwargs(model: type[db.Model], row: dict) -> dict:
     kwargs = dict(row)
+    # Generic, not hand-listed per model/column - the same reasoning as
+    # _dump_row()'s isoformat conversion (which already handles any
+    # DateTime column, not just ConversationMessage.created_at): a new
+    # DateTime column added to any model (e.g. Activity.completed_at) is
+    # parsed back automatically, no import-side special-casing to
+    # remember. See test_schema_drift.py for the regression test this keeps
+    # honest against future schema changes.
+    for column in model.__table__.columns:
+        if isinstance(column.type, db.DateTime) and kwargs.get(column.name):
+            kwargs[column.name] = datetime.fromisoformat(kwargs[column.name])
     if model is ConversationMessage:
         # Auto-increment, and nothing else has a foreign key pointing at it
         # by value, so a fresh id from this installation's own sequence is
         # fine — trying to force back the exported id risks colliding with
         # rows that already exist here.
         kwargs.pop("id", None)
-        if kwargs.get("created_at"):
-            kwargs["created_at"] = datetime.fromisoformat(kwargs["created_at"])
     return kwargs
 
 

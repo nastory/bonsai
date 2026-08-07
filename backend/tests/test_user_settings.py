@@ -16,6 +16,7 @@ def test_get_or_create_returns_defaults_on_first_call(db) -> None:
     assert settings.weekly_goal_activities is None
     assert settings.image_generation_model is None
     assert settings.image_generation_use_completion_credentials is True
+    assert settings.onboarding_completed is False
 
 
 def test_get_or_create_returns_the_same_row_on_subsequent_calls(db) -> None:

@@ -17,6 +17,7 @@ def test_get_settings_creates_defaults_on_first_call(client, db) -> None:
     assert body["visualAidsEnabled"] is False
     assert body["videoEmbeddingEnabled"] is False
     assert body["weeklyGoalActivities"] is None
+    assert body["onboardingCompleted"] is False
 
 
 def test_put_settings_updates_provided_fields(client, db) -> None:
@@ -108,3 +109,13 @@ def test_put_settings_rejects_non_positive_weekly_goal(client, db) -> None:
     response = client.put("/api/settings", json={"weeklyGoalActivities": 0})
 
     assert response.status_code == 400
+
+
+def test_put_settings_marks_onboarding_completed(client, db) -> None:
+    response = client.put("/api/settings", json={"onboardingCompleted": True})
+
+    assert response.status_code == 200
+    assert response.get_json()["onboardingCompleted"] is True
+
+    # Persists across requests, same as every other field.
+    assert client.get("/api/settings").get_json()["onboardingCompleted"] is True

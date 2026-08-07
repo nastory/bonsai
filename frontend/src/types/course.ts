@@ -178,6 +178,8 @@ export interface UserSettings {
   videoEmbeddingEnabled: boolean;
   /** Optional personal goal: activities to complete each calendar week. Null means no goal is set. */
   weeklyGoalActivities: number | null;
+  /** False only for a brand-new install - gates the first-time OnboardingModal. */
+  onboardingCompleted: boolean;
 }
 
 /**
@@ -211,4 +213,5 @@ export interface UserSettingsPatch {
   visualAidsEnabled?: boolean;
   videoEmbeddingEnabled?: boolean;
   weeklyGoalActivities?: number | null;
+  onboardingCompleted?: boolean;
 }

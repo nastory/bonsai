@@ -10,6 +10,7 @@ so API keys already configured on the target installation survive.
 import io
 import json
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -123,6 +124,29 @@ def test_import_data_round_trips_courses_modules_activities(app, db) -> None:
         assert activity.status == "completed"
         material = db.session.get(SourceMaterial, "src1")
         assert material is not None
+
+
+def test_import_data_restores_a_completed_activitys_timestamp_as_a_real_datetime(app, db) -> None:
+    # Regression test: Activity.completed_at is a second DateTime column
+    # beyond ConversationMessage.created_at - _row_kwargs() used to only
+    # parse the latter back from its exported isoformat string, which
+    # crashed importing any real export containing a completed activity
+    # ("SQLite DateTime type only accepts Python datetime and date objects").
+    # See test_schema_drift.py for the general regression guard.
+    with app.app_context():
+        course = _make_course_with_content(app)
+        activity = course.modules[0].activities[0]
+        activity.completed_at = datetime(2026, 1, 1, 12, 0, 0)
+        db.session.commit()
+        archive_bytes = export_data()
+
+        import_data(archive_bytes)
+
+        activity = db.session.get(Activity, "a1")
+        assert isinstance(activity.completed_at, datetime)
+        assert activity.completed_at == datetime(2026, 1, 1, 12, 0, 0)
+        # Would raise AttributeError if completed_at were still a plain string.
+        activity.to_dict()
 
 
 def test_import_data_restores_content_files_that_load_correctly(app, db) -> None:

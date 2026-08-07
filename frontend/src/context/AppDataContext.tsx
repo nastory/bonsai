@@ -23,6 +23,10 @@ const DEFAULT_USER: UserSettings = {
   visualAidsEnabled: false,
   videoEmbeddingEnabled: false,
   weeklyGoalActivities: null,
+  // Irrelevant while loading is true (OnboardingModal gates on !loading
+  // too), but true here so a stray render before the real fetch resolves
+  // never flashes the modal.
+  onboardingCompleted: true,
 };
 
 interface AppDataContextValue {

@@ -382,6 +382,13 @@ class UserSettings(db.Model):
     # None means no goal is set - also how a learner clears one, per the PRD
     # ("a standing preference the learner can change or clear at any time").
     weekly_goal_activities = db.Column(db.Integer, nullable=True)
+    # False only for a genuinely fresh row (a brand-new install) - gates the
+    # first-time onboarding modal (name -> model/embedding setup -> Tavily
+    # setup -> done). The migration that adds this column backfills existing
+    # rows to True (server_default), deliberately different from this
+    # column's own False default: an existing user upgrading shouldn't
+    # suddenly see a "first time" popup.
+    onboarding_completed = db.Column(db.Boolean, nullable=False, default=False)
 
     @classmethod
     def get_or_create(cls) -> "UserSettings":
@@ -427,4 +434,5 @@ class UserSettings(db.Model):
             "visualAidsEnabled": self.visual_aids_enabled,
             "videoEmbeddingEnabled": self.video_embedding_enabled,
             "weeklyGoalActivities": self.weekly_goal_activities,
+            "onboardingCompleted": self.onboarding_completed,
         }

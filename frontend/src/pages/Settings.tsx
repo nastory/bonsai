@@ -1,60 +1,12 @@
-import { useEffect, useState, type ComponentProps } from 'react';
-import { Check, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import type { UserSettingsPatch } from '../types/course';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { KeyInput, type SaveStatus } from '../components/ui/KeyInput';
+import { SegmentedControl } from '../components/ui/SegmentedControl';
 import { Toggle } from '../components/ui/Toggle';
 import { cn } from '../components/ui/cn';
-
-type SaveStatus = 'idle' | 'saved' | 'error';
-
-function KeyInput({
-  status,
-  className,
-  ...props
-}: ComponentProps<typeof Input> & { status: SaveStatus }) {
-  return (
-    <div className={cn('relative', className)}>
-      <Input className={cn(status !== 'idle' && 'pr-10')} {...props} />
-      {status === 'saved' && (
-        <Check className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-600" />
-      )}
-      {status === 'error' && (
-        <X className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-600" />
-      )}
-    </div>
-  );
-}
-
-function SegmentedControl<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="inline-flex rounded-lg border border-bonsai-border bg-white p-1">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-            value === option.value
-              ? 'bg-bonsai-green text-white'
-              : 'text-bonsai-text-muted hover:text-bonsai-text',
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export function Settings() {
   const { user, updateUserSettings } = useAppData();
