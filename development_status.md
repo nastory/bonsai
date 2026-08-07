@@ -1,6 +1,6 @@
 # Development Status
 
-Last updated: 2026-08-05
+Last updated: 2026-08-07
 
 This is a snapshot of what's built versus what's next. For the *why* behind any of it, see `bonsai_prd.md` (product requirements, with a full Milestones section per phase). For the *how*, see `design.md` (a build-slice-by-build-slice technical narrative covering everything below in far more detail, plus a Roadmap section for what's not built yet).
 
@@ -11,7 +11,7 @@ This is a snapshot of what's built versus what's next. For the *why* behind any 
 | Phase 0 — UI Mockup | Done |
 | Phase 1 — Core Loop | Done |
 | Phase 2 — Rich Media & Continuity | Done |
-| Phase 3 — Polish | Not started |
+| Phase 3 — Polish | In progress |
 
 ## Phase 0: UI Mockup — done
 
@@ -41,17 +41,22 @@ Every item on this phase's list shipped, including BYOM refinement:
 - **Video embedding.** A real YouTube `<iframe>` embed as its own standalone module activity, best-effort once per module: a Tavily search (restricted to youtube.com/youtu.be, terms tailored to the module's actual content) surfaces a few candidates, a model picks the best match and writes a caption, and the video slots into whichever position in the module's activity order fits its content, not a fixed slot. See `docs/process_flows.md` for a diagram of exactly where this fits into module generation.
 - **BYOM local-model refinement.** Not a single deliverable but a running set of real reliability fixes found and fixed via live verification against local Ollama models: routing BYOM calls through Ollama's `ollama_chat/` prefix instead of a buggy one, schema-constrained decoding (plus a lesson that schema validators' conditional requirements aren't enforced by the decoder, only a field's own required-ness), an explicit context-window size, a real litellm Ollama-embeddings bug worked around, and an interview prompt redesigned around a fixed topic checklist to reduce repeat-questioning on weaker local models.
 
-## Phase 3: Polish — not started
+## Phase 3: Polish — in progress
 
-Per `bonsai_prd.md`, not yet scoped in any detail:
+Per `bonsai_prd.md`'s Milestones, this phase is scoped down to two items: semantic search over the course index, and community/contribution readiness. Everything else once listed here (Settings refinements, AI evals) was explicitly dropped from scope rather than deferred — Settings refinements had already happened incidentally across earlier phases' work, and AI evals were dropped in favor of relying on human experience using the app instead of automated LLM-graded evals.
 
-- Settings refinements.
-- Semantic search over the course index (using the embedding model already in place for retrieval).
-- AI evals — rubric-based LLM grading of interview-question helpfulness, search-result relevance, and lesson/activity quality (moved here from Phase 2 scope).
-- Community/contribution readiness.
+- **Semantic search over the course index — done, delivered as "Resources".** Three features grounded in a learner's own already-generated course content, reached from a new "Resources" nested nav item (replacing the old cross-course title-search "Library" page, dropped entirely):
+  - **Flash Cards** and **Quiz Me** — pick a course and module, and an LLM generates a saved, reusable set of question/answer pairs (Flash Cards) or a standalone quiz (Quiz Me) grounded in that module's real generated content. Generated once, never regenerated.
+  - **Ask Me Anything** — a chat scoped strictly to a learner's own course materials, not general knowledge. Each message runs through a four-step pipeline: an LLM rewrites the question into search-optimized terms (resolving conversational follow-ups via chat history), a classifier picks up to 3 courses whose material could plausibly help, each selected course's vector index is queried concurrently and merged, and a final answer is generated strictly from what was retrieved — declining if nothing relevant turns up. No persistence; the client resends its own transcript each turn.
+  - Found and fixed a real, live-reproduced bug along the way: an already-existing course with a real uploaded document had no vector index at all (a lost-update race from an unrelated debugging session), so Ask Me Anything silently had zero coverage for it despite otherwise working correctly. Fixed with a new `backfill_vector_indexes.py` maintenance script that rebuilds a missing index from a course's already-extracted document text, no re-upload needed — confirmed the code path that indexes documents at upload time already works correctly for anything created going forward.
+- **Reset Bonsai — done, not originally scoped, added on request.** A "Reset Bonsai" option in the user menu permanently deletes every course and all Settings (including API keys), leaving the installation exactly as it was on first install. The one irreversible action in the product, so it requires typing a confirmation word on top of a normal confirm dialog, and the server re-checks that confirmation itself rather than trusting the frontend alone.
+- **LLM cost estimation — done.** A script (`estimate_costs.py`) drives real generation against a throwaway database, measures real per-call token usage, and extrapolates to an "average course" cost estimate across several reference hosted models — see the README's cost table.
+- **Activity content definitions & cadence — done.** Closed the longest-standing open item on what each learning activity type is and how often it should appear (per the user-authored `docs/course_content_definitions.md`), which required two genuinely new pieces of functionality: quiz/assessment restructured from one question to a real multi-question list, and discussion activities reworked into a genuine multi-turn conversation (target 3, hard cap 5 exchanges) instead of a single-shot submit-and-feedback flow. Capstone also became a fully distinct activity type rather than a styling variant of "project".
+- **First-time onboarding modal — done.** A one-time popup on first load walks through setting a username, model/embedding configuration (skippable), and a Tavily key (skippable).
+- **Community/contribution readiness — not started.**
 
 ## Current build health
 
-- 344 backend tests passing (`cd backend && pytest`), frontend `tsc --noEmit`/`npm run build` both clean.
-- Migration head: `3233479dcbab`.
-- Every feature above has been verified against a real live Ollama instance and, where relevant, a real Tavily key or hosted provider, not just the mocked test suite — this project's standing verification bar throughout both phases.
+- 475 backend tests passing (`cd backend && pytest`), frontend `tsc --noEmit`/`npm run build` both clean.
+- Migration head: `cf828066c025`.
+- Every feature above has been verified against a real live Ollama instance and, where relevant, a real Tavily key or hosted provider, not just the mocked test suite — this project's standing verification bar throughout every phase.

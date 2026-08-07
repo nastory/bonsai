@@ -9,6 +9,7 @@ An open-source, locally-hosted, self-guided AI learning platform for self-direct
 - **Adapts as you go.** Mid-course, branch into a related topic or change direction entirely without losing what you've already learned; once a course is finished, keep going or dive deeper from there.
 - **Rich, multi-format lessons.** Readings, quizzes, essays, discussions, projects, embedded YouTube videos, and illustrative images, not just walls of generated text.
 - **Feedback, not grades.** Every exercise exists to help you learn, never to score or judge you.
+- **Study beyond the lesson itself.** Generate saved, reusable Flash Cards or a Quiz Me quiz from any module you've already worked through, or ask Bonsai anything about your own course material in a chat that routes each question to whichever course(s) can actually answer it, grounded strictly in what you've learned, not general knowledge.
 - **You control the cost.** Self-hosted and open source; use a hosted LLM provider or bring your own local model (Ollama) and keep everything on your own machine. Course content retrieval can fit well within Tavily's free tier as well.
 
 ## Estimated cost of generating an average course (5 modules with 4 learning activities each)
@@ -91,11 +92,13 @@ bonsai/
     │   │   ├── retrieval.py               # Tavily web search + page fetch, mocked in test mode
     │   │   ├── retrieval_agent.py         # unused model-driven tool-calling loop, kept for a possible future Q&A feature
     │   │   ├── course_context.py          # compacted course memory + real conversation-turn assembly, shared by every prompt
-    │   │   ├── course_generation.py       # interview -> outline -> approve; deletion; "Branch Off"/"Change This Course"
+    │   │   ├── course_generation.py       # interview -> outline -> approve; deletion; full-instance reset; "Branch Off"/"Change This Course"
     │   │   ├── module_generation.py       # generates a module's activities on demand, sequentially, retrieval- or document-grounded
     │   │   ├── module_retrieval.py        # deliberate per-activity search planning + retrieval before any content is written
+    │   │   ├── study_tools_generation.py  # standalone Flash Cards / Quiz Me generation from a module's already-generated content
+    │   │   ├── ama.py                     # Ask Me Anything: search-term optimization -> course classification -> retrieval -> answer
     │   │   └── data_export.py             # full-data export/import as a portable .zip archive
-    │   └── routes/               # health, courses, settings, activities, course_creation, modules, data
+    │   └── routes/               # health, courses, settings, activities, course_creation, modules, study_tools, ama, data
     ├── migrations/          # Flask-Migrate / Alembic schema migrations
     └── tests/               # pytest suite
 ```
@@ -180,6 +183,18 @@ curl -X POST http://localhost:5000/api/modules/<module-id>/direction-interview -
 # .../direction-outline-feedback, .../direction-outline-approve (replaces everything not yet reached
 # in this same course; nothing already completed is touched)
 
+curl -X POST http://localhost:5000/api/modules/<module-id>/flash-cards
+# generates (or returns the already-generated) flash card set for a module's real content —
+# idempotent, a module's cards are generated once and reused forever
+
+curl -X POST http://localhost:5000/api/modules/<module-id>/quiz-set
+# same idempotent shape as flash-cards, but a standalone quiz instead
+
+curl -X POST http://localhost:5000/api/ama/messages -H "Content-Type: application/json" \
+  -d '{"message": "...", "history": []}'
+# "Ask Me Anything": routes the question to up to 3 relevant courses' vector indexes and answers
+# strictly from what's retrieved, declining anything off-topic; no persistence, resend "history" each turn
+
 curl http://localhost:5000/api/data/export -o bonsai-export.zip
 # a portable archive: every course/module/activity/source-material/settings row plus their on-disk
 # content files, as JSON + the real files, zipped together. API keys are never included.
@@ -187,6 +202,11 @@ curl http://localhost:5000/api/data/export -o bonsai-export.zip
 curl -X POST http://localhost:5000/api/data/import -F file=@bonsai-export.zip
 # restores from a previously exported archive — replaces all current courses/progress with what's in
 # the archive; API keys already configured on this installation are left untouched
+
+curl -X POST http://localhost:5000/api/data/reset -H "Content-Type: application/json" \
+  -d '{"confirm": "delete"}'
+# permanently deletes every course and all Settings, including API keys — a full factory reset,
+# the one irreversible endpoint in the API. Rejects anything but the exact confirmation body.
 ```
 
 ## Running the backend tests

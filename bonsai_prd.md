@@ -58,6 +58,8 @@ Bonsai also needs model roles beyond text completion: an embedding model, which 
 ### Data Export & Import
 Learners can export all of their data, course outlines, module content, progress, index, as a single archive, and import it into a different installation to restore their full history. Exports leave out API keys and any other credentials; those get re-entered after an import.
 
+Learners can also reset their installation entirely: a "Reset Bonsai" option deletes every course and all Settings (including API keys), leaving the app exactly as it was on first install. This is the one destructive action in the product with no undo, so it requires typing a confirmation word before it runs, on top of a normal confirm dialog.
+
 ### Content Moderation & Restrictions
 Bonsai must never teach, reference, recommend, or encourage anything illegal: drug manufacturing, weapons, self-harm, hate content, none of it. Medical and legal topics need disclaimers making clear Bonsai doesn't license or qualify the learner to practice or advise in those fields. Esoteric topics like conspiracy theories or alternative medicine need to be clearly flagged when they contradict scientific consensus or the official record. Bonsai stays neutral on religion and politics, carries no accreditation of any kind, and makes no guarantee that its generated or synthesized material is correct.
 
