@@ -58,8 +58,8 @@ export interface Activity {
   messages?: DiscussionMessage[];
   /** Discussion-only: true once the conversation has reached its closing turn. */
   discussionDone?: boolean;
-  /** Optional short comprehension check embedded at the end of a reading, rendered distinctly from the main content. */
-  checkPrompt?: string;
+  /** Optional multiple-choice comprehension check embedded at the end of a reading, rendered distinctly from the main content. */
+  checkQuestion?: QuizQuestion;
 }
 
 export interface FlashCard {

@@ -148,18 +148,16 @@ def _configure_settings(args: argparse.Namespace) -> str:
 
 
 def _feedback_prompt_text(activity) -> str:
-    content = activity.to_dict()
-    if activity.activity_type == "reading":
-        return content.get("checkPrompt") or ""
-    return content.get("prompt") or ""
+    return activity.to_dict().get("prompt") or ""
 
 
 def _first_feedback_eligible_activity(course: Course):
+    """essay/project/capstone only - a reading's checkQuestion is multiple-choice,
+    checked deterministically client-side like any quiz question, not free-text
+    feedback."""
     for module in course.modules:
         for activity in module.activities:
-            if activity.activity_type in ("essay", "project", "capstone") or (
-                activity.activity_type == "reading" and activity.to_dict().get("checkPrompt")
-            ):
+            if activity.activity_type in ("essay", "project", "capstone"):
                 return activity
     return None
 
@@ -200,11 +198,10 @@ def run(args: argparse.Namespace) -> tuple[dict, str, int]:
 
         activity = _first_feedback_eligible_activity(course)
         if activity is not None:
-            kind = "check" if activity.activity_type == "reading" else activity.activity_type
             generate_activity_feedback(
                 _feedback_prompt_text(activity),
                 DUMMY_FEEDBACK_RESPONSE,
-                kind,
+                activity.activity_type,
                 "encouraging",
                 course_id=activity.module.course_id,
                 module_id=activity.module_id,

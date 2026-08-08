@@ -254,6 +254,51 @@ def test_validate_llm_json_accepts_activity_citations() -> None:
     assert result.citations[0].url == "https://example.com/gpus"
 
 
+def test_validate_llm_json_accepts_a_readings_check_question() -> None:
+    raw = """
+    {
+        "type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading.",
+        "checkQuestion": {
+            "question": "What's the key idea?", "options": ["A", "B"],
+            "correctAnswerIndex": 0, "explanation": "Because A is right."
+        }
+    }
+    """
+
+    result = validate_llm_json(raw, GeneratedActivitySchema)
+
+    assert result.checkQuestion.question == "What's the key idea?"
+    assert result.checkQuestion.correctAnswerIndex == 0
+
+
+def test_generated_activity_check_question_is_optional() -> None:
+    result = GeneratedActivitySchema(type="reading", title="Intro", estimatedMinutes=15, body="Some reading.")
+
+    assert result.checkQuestion is None
+
+
+def test_generated_activity_rejects_check_question_with_out_of_bounds_correct_answer() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedActivitySchema(
+            type="reading",
+            title="Intro",
+            estimatedMinutes=15,
+            body="Some reading.",
+            checkQuestion={"question": "Q", "options": ["A", "B"], "correctAnswerIndex": 5, "explanation": "e"},
+        )
+
+
+def test_generated_activity_rejects_check_question_with_blank_explanation() -> None:
+    with pytest.raises(ValidationError):
+        GeneratedActivitySchema(
+            type="reading",
+            title="Intro",
+            estimatedMinutes=15,
+            body="Some reading.",
+            checkQuestion={"question": "Q", "options": ["A", "B"], "correctAnswerIndex": 0, "explanation": "  "},
+        )
+
+
 def test_validate_llm_json_activity_citations_default_to_none() -> None:
     raw = '{"type": "reading", "title": "Intro", "estimatedMinutes": 15, "body": "Some reading."}'
 

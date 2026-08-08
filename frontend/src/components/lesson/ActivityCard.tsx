@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
-import type { Activity, DiscussionMessage } from '../../types/course';
+import type { Activity, DiscussionMessage, QuizQuestion } from '../../types/course';
 import { generateActivityFeedback, submitDiscussionReply } from '../../lib/api';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -70,33 +70,13 @@ function useActivityFeedback(activityId: string) {
   return { status, feedback, submit };
 }
 
-function CheckUnderstanding({ activityId, prompt }: { activityId: string; prompt: string }) {
-  const [answer, setAnswer] = useState('');
-  const { status, feedback, submit } = useActivityFeedback(activityId);
-  const done = status === 'done' || status === 'error';
-
+function CheckUnderstanding({ question }: { question: QuizQuestion }) {
   return (
     <div className="mt-5 rounded-lg border border-bonsai-green/30 bg-emerald-50 p-4">
       <p className="text-sm font-medium text-bonsai-green">Check your understanding</p>
-      <p className="mt-1 text-sm text-bonsai-text">
-        <InlineMarkdown>{prompt}</InlineMarkdown>
-      </p>
-      <div className="mt-3 flex gap-2">
-        <Input
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          placeholder="Write your answer..."
-          disabled={status === 'loading' || done}
-        />
-        <Button
-          variant="primary"
-          disabled={!answer.trim() || status === 'loading' || done}
-          onClick={() => submit(answer.trim())}
-        >
-          {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Check'}
-        </Button>
+      <div className="mt-3">
+        <QuizQuestionBlock question={question} index={0} total={1} />
       </div>
-      {done && <p className="mt-2 text-sm text-bonsai-green">{feedback}</p>}
     </div>
   );
 }
@@ -217,7 +197,7 @@ export function ActivityCard({ activity }: { activity: Activity }) {
         <>
           <ReadingBody body={activity.body} />
           {activity.citations && <Citations citations={activity.citations} />}
-          {activity.checkPrompt && <CheckUnderstanding activityId={activity.id} prompt={activity.checkPrompt} />}
+          {activity.checkQuestion && <CheckUnderstanding question={activity.checkQuestion} />}
         </>
       )}
 

@@ -63,15 +63,17 @@ def complete_activity(activity_id: str) -> Response:
 def generate_feedback(activity_id: str) -> Response:
     """Generate real feedback on a learner's free-text response to an activity.
 
-    Covers essay/project/capstone activities and a reading's optional
-    comprehension check (`checkPrompt`) - the activity's own prompt/question
-    is derived server-side from its stored content, not trusted from the
-    client, matching this codebase's general "server derives what it can"
-    convention. Quiz/assessment activities reject this: they already have
-    real per-question feedback from generation (correctAnswerIndex/
-    explanation), checked deterministically on the frontend. Discussion
-    activities reject this too - they're a real multi-turn conversation
-    with their own endpoint instead (see post_discussion_message() below).
+    Covers essay/project/capstone activities only - the activity's own
+    prompt is derived server-side from its stored content, not trusted
+    from the client, matching this codebase's general "server derives what
+    it can" convention. Quiz/assessment activities reject this: they
+    already have real per-question feedback from generation
+    (correctAnswerIndex/explanation), checked deterministically on the
+    frontend - a reading's optional comprehension check (`checkQuestion`)
+    is the same shape and checked the same way, not a free-text response.
+    Discussion activities reject this too - they're a real multi-turn
+    conversation with their own endpoint instead (see
+    post_discussion_message() below).
 
     Args:
         activity_id: The activity's id.
@@ -123,8 +125,6 @@ def _feedback_kind_and_prompt(activity: Activity) -> tuple[str | None, str]:
     content = activity.to_dict()
     if activity.activity_type in ("essay", "project", "capstone"):
         return activity.activity_type, content.get("prompt") or ""
-    if activity.activity_type == "reading" and content.get("checkPrompt"):
-        return "check", content["checkPrompt"]
     return None, ""
 
 

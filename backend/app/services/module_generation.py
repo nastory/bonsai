@@ -620,7 +620,12 @@ def _mock_activity(planned: dict) -> GeneratedActivitySchema:
             estimatedMinutes=15,
             body=f"[MOCK] A guided reading covering {planned['title']}.",
             citations=[CitationSchema(label="[MOCK] Example Source", url="https://example.com/mock-source")],
-            checkPrompt=f"[MOCK] What's the key idea behind {planned['title']}?",
+            checkQuestion=QuizQuestionSchema(
+                question=f"[MOCK] What's the key idea behind {planned['title']}?",
+                options=["[MOCK] Correct answer", "[MOCK] Wrong answer"],
+                correctAnswerIndex=0,
+                explanation="[MOCK] Because this is the mocked correct answer.",
+            ),
         )
     if activity_type in ("essay", "project", "discussion", "capstone"):
         return GeneratedActivitySchema(

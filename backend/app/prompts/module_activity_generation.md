@@ -18,7 +18,12 @@ Respond with JSON only, no other text, for each activity in exactly this shape:
   "title": "...",
   "estimatedMinutes": 15,
   "body": "... (for type=reading only, the actual guided reading content — target 1,000 to 2,000 words, scaled by the learner's stated depth preference from their learner profile above: a quick-overview preference should land toward the shorter end, a deep/thorough preference toward the longer end)",
-  "checkPrompt": "... (for type=reading only, optional: a short comprehension-check question about the reading, only when one genuinely tests something worth checking — most readings don't need one, don't force it)",
+  "checkQuestion": {
+    "question": "...",
+    "options": ["...", "..."],
+    "correctAnswerIndex": 0,
+    "explanation": "..."
+  } (for type=reading only, optional: a single multiple-choice comprehension-check question about the reading, same shape as one item in "questions" below — only when one genuinely tests something worth checking, most readings don't need one, don't force it),
   "questions": [
     {
       "question": "...",

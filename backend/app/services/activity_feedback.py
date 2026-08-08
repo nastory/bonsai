@@ -1,17 +1,18 @@
 """Real, on-demand feedback for a learner's free-text activity response.
 
 Per the PRD: exercises are feedback-only, never graded. Quizzes/assessments
-already get this from a real generated explanation (see
-GeneratedActivitySchema's questions[].correctAnswerIndex/explanation). This
-module covers the other free-response cases - essay/project/discussion/
-capstone activities, and a
-reading's optional comprehension check (GeneratedActivitySchema.checkPrompt) -
-which used to show fixed canned copy regardless of what the learner actually
-wrote (see the now-deleted lib/feedback.ts on the frontend). Generated fresh
-per submission instead, grounded in both the activity's own prompt and the
-learner's real response, and in the learner's configured feedback tone
-(UserSettings.feedback_tone) - the one place that setting actually reaches
-generated content, rather than picking between two hardcoded frontend strings.
+(and a reading's optional comprehension check, GeneratedActivitySchema.checkQuestion,
+the same shape) already get this from a real generated explanation (see
+QuizQuestionSchema's correctAnswerIndex/explanation) checked deterministically
+client-side. This module covers the genuinely free-response cases instead -
+essay/project/capstone activities (discussion has its own multi-turn service,
+see discussion.py) - which used to show fixed canned copy regardless of what
+the learner actually wrote (see the now-deleted lib/feedback.ts on the
+frontend). Generated fresh per submission instead, grounded in both the
+activity's own prompt and the learner's real response, and in the learner's
+configured feedback tone (UserSettings.feedback_tone) - the one place that
+setting actually reaches generated content, rather than picking between two
+hardcoded frontend strings.
 """
 
 from flask import current_app
@@ -38,12 +39,11 @@ def generate_activity_feedback(
     """Generate real feedback on a learner's free-text response.
 
     Args:
-        prompt_text: The activity's own seed prompt/question (its `prompt`
-            for essay/project/capstone, or `checkPrompt` for a reading's
-            comprehension check).
+        prompt_text: The activity's own seed prompt (`prompt`, for essay/
+            project/capstone).
         response_text: What the learner actually wrote.
-        kind: One of "essay", "project", "capstone", "check" - shapes the
-            prompt's framing of what kind of response this is.
+        kind: One of "essay", "project", "capstone" - shapes the prompt's
+            framing of what kind of response this is.
         tone: UserSettings.feedback_tone ("encouraging" or "straightforward").
         course_id: The activity's course, for usage logging (see llm.py's
             complete()). None skips logging.

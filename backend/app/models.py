@@ -217,7 +217,7 @@ class Activity(db.Model):
         """Serialize to the shape frontend/src/types/course.ts's Activity expects.
 
         Content-heavy fields (body, citations, questions, prompt,
-        checkPrompt) are read from the file at content_path and merged in,
+        checkQuestion) are read from the file at content_path and merged in,
         once module generation has populated it; omitted entirely for
         activities that haven't been generated yet. For a discussion
         activity, also merges its real-time turn-by-turn thread from

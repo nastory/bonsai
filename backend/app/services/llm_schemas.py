@@ -271,14 +271,18 @@ class GeneratedActivitySchema(BaseModel):
     # result (see module_retrieval.py); None when it didn't (no search
     # results for this activity, or no Tavily key configured).
     citations: list[CitationSchema] | None = None
-    # Reading-only, optional: a short comprehension-check question appended
-    # after the body. Not every reading needs one - fine to omit, same
-    # graceful-optionality as citations above.
-    checkPrompt: str | None = None
+    # Reading-only, optional: a single multiple-choice comprehension-check
+    # question appended after the body. Same shape as one item in
+    # "questions" (quiz/assessment), not a free-text prompt - a check with
+    # a real correct answer, checked deterministically client-side, the
+    # same as any other multiple-choice question, rather than a free-text
+    # response graded by a separate LLM feedback call. Not every reading
+    # needs one - fine to omit, same graceful-optionality as citations above.
+    checkQuestion: QuizQuestionSchema | None = None
 
     @model_validator(mode="after")
     def _quiz_and_assessment_require_checkable_questions(self) -> "GeneratedActivitySchema":
-        """Reject a quiz/assessment with no way to tell the learner if they got it right.
+        """Reject a quiz/assessment/check-question with no way to tell the learner if they got it right.
 
         Every question's `correctAnswerIndex` must be a valid index into its
         own `options` — a missing or out-of-range index means the frontend
@@ -291,14 +295,16 @@ class GeneratedActivitySchema(BaseModel):
         existing graceful-degradation stance elsewhere (e.g.
         VisualAidPlanSchema doesn't enforce its own "0-3" either).
         """
-        if self.type in ("quiz", "assessment"):
-            if not self.questions:
-                raise ValueError('"questions" must have at least one item for type=quiz/assessment')
-            for q in self.questions:
-                if not (0 <= q.correctAnswerIndex < len(q.options)):
-                    raise ValueError('"correctAnswerIndex" must be a valid index into "options"')
-                if not (q.explanation and q.explanation.strip()):
-                    raise ValueError('"explanation" is required for every question')
+        questions_to_check = list(self.questions or [])
+        if self.checkQuestion is not None:
+            questions_to_check.append(self.checkQuestion)
+        if self.type in ("quiz", "assessment") and not self.questions:
+            raise ValueError('"questions" must have at least one item for type=quiz/assessment')
+        for q in questions_to_check:
+            if not (0 <= q.correctAnswerIndex < len(q.options)):
+                raise ValueError('"correctAnswerIndex" must be a valid index into "options"')
+            if not (q.explanation and q.explanation.strip()):
+                raise ValueError('"explanation" is required for every question')
         return self
 
 

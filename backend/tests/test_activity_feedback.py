@@ -1,12 +1,13 @@
 """Tests for /api/activities/<id>/feedback: real feedback on a learner's free-text response.
 
-Covers essay/project/capstone activities and a reading's checkPrompt
-comprehension check - the activities that used to get fixed canned copy
-regardless of what was actually written (see the deleted frontend
-lib/feedback.ts). Quiz/assessment activities reject this endpoint entirely:
-they already have real per-question feedback from generation. Discussion
-activities reject it too - see test_discussion.py/test_discussion_routes.py
-for their own real, multi-turn endpoint instead.
+Covers essay/project/capstone activities only - the activities that used to
+get fixed canned copy regardless of what was actually written (see the
+deleted frontend lib/feedback.ts). Quiz/assessment activities reject this
+endpoint entirely: they already have real per-question feedback from
+generation. So does a reading's checkQuestion - same multiple-choice shape,
+checked deterministically client-side, not free-text. Discussion activities
+reject it too - see test_discussion.py/test_discussion_routes.py for their
+own real, multi-turn endpoint instead.
 """
 
 from app.extensions import db as _db
@@ -112,16 +113,23 @@ def test_feedback_uses_the_learners_configured_tone(real_llm_client, monkeypatch
     assert "Warm and encouraging" not in system_message
 
 
-def test_feedback_for_reading_uses_check_prompt(client, db) -> None:
-    _seed_activity("a1", "reading", {"body": "Some reading.", "checkPrompt": "What's the key idea?"})
-
-    response = client.post("/api/activities/a1/feedback", json={"response": "It's about Y."})
-
-    assert response.status_code == 200
-
-
-def test_feedback_rejects_reading_without_a_check_prompt(client, db) -> None:
-    _seed_activity("a1", "reading", {"body": "Some reading."})
+def test_feedback_rejects_reading_activities(client, db) -> None:
+    """A reading's checkQuestion is multiple-choice, checked client-side like any quiz
+    question - readings never take free-text feedback via this endpoint, checkQuestion
+    present or not."""
+    _seed_activity(
+        "a1",
+        "reading",
+        {
+            "body": "Some reading.",
+            "checkQuestion": {
+                "question": "What's the key idea?",
+                "options": ["A", "B"],
+                "correctAnswerIndex": 0,
+                "explanation": "e",
+            },
+        },
+    )
 
     response = client.post("/api/activities/a1/feedback", json={"response": "It's about Y."})
 
