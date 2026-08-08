@@ -1,8 +1,10 @@
-import { X, Check, Circle } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Course } from '../../types/course';
 import { cn } from '../ui/cn';
 import { InlineMarkdown } from '../ui/Markdown';
+import { ActivityTypeLabel } from '../ui/ActivityTypeLabel';
+import { ActivityTypeIcon } from '../ui/ActivityTypeIcon';
 import { activityPath } from '../../lib/courseHelpers';
 
 interface TableOfContentsProps {
@@ -60,13 +62,10 @@ export function TableOfContents({ course, currentActivityId, onClose }: TableOfC
                             isCurrent ? 'bg-bonsai-cream font-medium text-bonsai-green' : 'text-bonsai-text hover:bg-bonsai-cream',
                           )}
                         >
-                          {activity.status === 'completed' ? (
-                            <Check className="h-3.5 w-3.5 shrink-0 text-bonsai-green" />
-                          ) : (
-                            <Circle className="h-3.5 w-3.5 shrink-0" />
-                          )}
-                          <span>
+                          <ActivityTypeIcon type={activity.type} completed={activity.status === 'completed'} />
+                          <span className="flex-1">
                             <InlineMarkdown>{activity.title}</InlineMarkdown>
+                            <ActivityTypeLabel type={activity.type} />
                           </span>
                         </Link>
                       </li>

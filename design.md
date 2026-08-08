@@ -947,3 +947,16 @@ Locking alone wasn't the whole fix, though. The previously-confirmed lost-update
 
 ### Verified
 487 backend tests passing (was 484): `test_vector_store.py` gained a deterministic regression test reproducing the exact stale-attribute scenario (two fresh `Course` objects, same id, second call must append not overwrite), a resilience test (`query()` finds a real index even with `vector_index_path` left `None`), and a real concurrency test (two actual `threading.Thread`s writing to the same course's index at once, with an injected delay in the embed call to force their critical sections to genuinely overlap, asserting both threads' chunks survive). Full suite still green.
+
+## Activity type shown per activity in a module's list (2026-08-07)
+
+Both places a module's activity list renders (`CourseHome.tsx`'s expandable per-module list, and `TableOfContents.tsx`'s in-lesson slide-out) previously showed only a completion icon (`Check`/`Circle`) and the activity's title — no way to tell a reading from a quiz from a discussion without opening it. Landed in three rounds, each a direct response to follow-up feedback rather than guessed upfront; final shape below.
+
+**`components/ui/ActivityTypeLabel.tsx`**: a small, sentence-case text label under the title ("Reading", "Discussion", "Capstone", etc.), in the app's standard dark green (`text-bonsai-green`, `#1B4332`), smaller than the title line and deliberately not all-caps once actually placed next to real title text (uppercase read fine as an isolated pill, not as a second line of prose-like text). Two earlier shapes rejected along the way: a bordered pill to the right of the title (felt disconnected from what it labeled), then briefly wrapping the existing `Badge` component once the pill was dropped (`Badge`'s uppercase is hardcoded, no way to opt out, so this got its own minimal styling instead once uppercase itself became the thing to remove).
+
+**`components/ui/ActivityTypeIcon.tsx`**: replaces the plain `Check`/`Circle` completion icon entirely. A slightly bigger (`h-5 w-5`, up from `h-3.5 w-3.5`) round icon that does two jobs at once - completion (filled dark green once done, a bare bordered outline otherwise, same color logic `Check`/`Circle` used) and activity type (a small `lucide-react` glyph inside: `BookOpen` for reading, `Play` for video, `MessageCircle` for discussion, `HelpCircle` for quiz, `PenLine` for essay, `Wrench` for project, `ClipboardCheck` for assessment, `Award` for capstone) - one glance now answers both "is this done" and "what is this," instead of needing the type label text too. Vertically centered against the two-line title+type block (`items-center` on the row, not `items-start` - tried aligning it to just the title line first, but centering across both lines read better once the icon itself got visually heavier).
+
+One shared pair of components, both list sites (`CourseHome.tsx`, `TableOfContents.tsx`) updated identically each round rather than letting the two drift.
+
+### Verified
+Frontend `tsc --noEmit`/`npm run build` clean, all three rounds. No backend changes. No frontend test suite exists in this repo (confirmed precedent throughout this project) — left for the user to eyeball in their own browser, per this project's standing no-headless-browser-verification preference.

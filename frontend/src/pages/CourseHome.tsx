@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate, Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Check, Circle } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
 import { findCurrentActivity, activityPath } from '../lib/courseHelpers';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { InlineMarkdown } from '../components/ui/Markdown';
+import { ActivityTypeLabel } from '../components/ui/ActivityTypeLabel';
+import { ActivityTypeIcon } from '../components/ui/ActivityTypeIcon';
 import { NoticeDialog } from '../components/layout/NoticeDialog';
 import { cn } from '../components/ui/cn';
 
@@ -198,13 +200,10 @@ export function CourseHome() {
                         to={activityPath(course.id, module.id, activity.id)}
                         className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-bonsai-text hover:bg-bonsai-cream"
                       >
-                        {activity.status === 'completed' ? (
-                          <Check className="h-3.5 w-3.5 shrink-0 text-bonsai-green" />
-                        ) : (
-                          <Circle className="h-3.5 w-3.5 shrink-0" />
-                        )}
-                        <span>
+                        <ActivityTypeIcon type={activity.type} completed={activity.status === 'completed'} />
+                        <span className="flex-1">
                           <InlineMarkdown>{activity.title}</InlineMarkdown>
+                          <ActivityTypeLabel type={activity.type} />
                         </span>
                       </Link>
                     </li>
